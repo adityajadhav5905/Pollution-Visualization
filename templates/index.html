@@ -1,860 +1,996 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-
-<head>
+  <head>
     <title>Pollution Monitoring using Heatmaps</title>
     <!-- Google Fonts - Poppins -->
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap"
+      rel="stylesheet"
+    />
     <style>
-        /* Reset and Base Styles */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+      /* Reset and Base Styles */
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* Main Body Styles */
+      body {
+        font-family: "Poppins", sans-serif;
+        background: linear-gradient(135deg, #0a192f, #112240);
+        color: #fff;
+        min-height: 100vh;
+        position: relative;
+        overflow-x: hidden;
+      }
+
+      /* Background Image Overlay */
+      body::before {
+        content: "";
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: url("/static/images/bg.jpg") no-repeat center center;
+        background-size: cover;
+        opacity: 0.1;
+        z-index: -1;
+      }
+
+      /* Main Container */
+      .container {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 28px 28px 40px;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+
+      /* Title Section */
+      .title-section {
+        min-height: 160px;
+        padding: 24px 0 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      /* Main Heading */
+      h1 {
+        color: #64ffda;
+        text-align: center;
+        font-size: 3.2rem;
+        line-height: 1.2;
+        margin-bottom: 1.2rem;
+        text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
+        animation: glow 2s ease-in-out infinite alternate;
+      }
+
+      h2 {
+        margin-bottom: 1rem;
+        font-size: 1.45rem;
+        color: #dff6ff;
+      }
+
+      h3 {
+        margin-bottom: 0.9rem;
+        font-size: 1.1rem;
+        color: #9fe9d6;
+        font-weight: 600;
+      }
+
+      .content-section {
+        width: 100%;
+        display: flex;
+        justify-content: center;
+      }
+
+      /* Glow Animation */
+      @keyframes glow {
+        from {
+          text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
         }
 
-        /* Main Body Styles */
-        body {
-            font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, #0a192f, #112240);
-            color: #fff;
-            min-height: 100vh;
-            position: relative;
-            overflow-x: hidden;
+        to {
+          text-shadow: 0 0 20px rgba(100, 255, 218, 0.6);
+        }
+      }
+
+      /* Upload Section */
+      .upload-section {
+        background: rgba(10, 25, 47, 0.8);
+        padding: 2rem 2rem 1.5rem;
+        border-radius: 16px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        width: min(940px, 100%);
+        margin: 0 auto;
+        border: 1px solid rgba(100, 255, 218, 0.2);
+        transition: transform 0.3s ease;
+      }
+
+      .upload-section:hover {
+        transform: translateY(-5px);
+      }
+
+      .mode-selector {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .mode-btn {
+        background: rgba(100, 255, 218, 0.15);
+        color: #64ffda;
+        border: 1px solid rgba(100, 255, 218, 0.4);
+      }
+
+      .mode-btn.active {
+        background: linear-gradient(45deg, #64ffda, #8892b0);
+        color: #0a192f;
+      }
+
+      .mode-panel {
+        display: none;
+        margin-top: 0.8rem;
+      }
+
+      .mode-panel.active {
+        display: block;
+      }
+
+      /* File Input Styles */
+      .file-input-container {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+        margin-bottom: 1.2rem;
+      }
+
+      input[type="file"] {
+        background: rgba(100, 255, 218, 0.1);
+        color: white;
+        padding: 0.78rem 1rem;
+        border-radius: 8px;
+        border: 1px solid #64ffda;
+        flex-grow: 1;
+        transition: all 0.3s ease;
+      }
+
+      input[type="file"]:hover {
+        background: rgba(100, 255, 218, 0.2);
+      }
+
+      .mqtt-form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 0.9rem;
+        margin-bottom: 1.2rem;
+      }
+
+      .mqtt-form-grid input,
+      .mqtt-form-grid select {
+        background: rgba(100, 255, 218, 0.1);
+        color: white;
+        min-height: 42px;
+        padding: 0.65rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid rgba(100, 255, 218, 0.35);
+      }
+
+      .mqtt-form-grid input::placeholder {
+        color: #b9d3ff;
+      }
+
+      .mqtt-actions {
+        display: flex;
+        gap: 0.8rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.2rem;
+      }
+
+      .status-box {
+        background: rgba(12, 30, 57, 0.7);
+        border: 1px solid rgba(100, 255, 218, 0.25);
+        border-radius: 10px;
+        padding: 1rem;
+        font-size: 0.92rem;
+        line-height: 1.4rem;
+        color: #d5e7ff;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 0.7rem;
+        margin-bottom: 0.8rem;
+      }
+
+      .metric-card {
+        background: rgba(100, 255, 218, 0.08);
+        border: 1px solid rgba(100, 255, 218, 0.2);
+        border-radius: 8px;
+        padding: 0.6rem;
+      }
+
+      .metric-card .label {
+        font-size: 0.78rem;
+        color: #9bc2e3;
+      }
+
+      .metric-card .value {
+        font-size: 1.05rem;
+        color: #dff6ff;
+        margin-top: 0.2rem;
+        font-weight: 600;
+      }
+
+      .spec-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.4rem 0.8rem;
+        margin-bottom: 0.8rem;
+      }
+
+      .spec-item {
+        font-size: 0.86rem;
+        color: #cae3f7;
+      }
+
+      .payload-preview {
+        background: rgba(0, 0, 0, 0.28);
+        border-radius: 6px;
+        padding: 0.6rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+        font-size: 0.82rem;
+      }
+
+      /* Button Styles */
+      button {
+        background: linear-gradient(45deg, #64ffda, #8892b0);
+        color: #0a192f;
+        min-height: 42px;
+        padding: 0.7rem 1.2rem;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(100, 255, 218, 0.4);
+      }
+
+      /* Refresh Button */
+      .refresh-btn {
+        display: none;
+        margin: 20px auto;
+        padding: 10px 20px;
+        font-size: 16px;
+        background: linear-gradient(45deg, #ff6b6b, #ff8e53);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
+        width: fit-content;
+      }
+
+      .refresh-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
+      }
+
+      .refresh-btn.show {
+        display: block;
+      }
+
+      /* Map Container */
+      #map-container {
+        margin-top: 1.4rem;
+        text-align: center;
+      }
+
+      /* Heatmap Item */
+      .heatmap-item {
+        margin: 1.1rem 0;
+        padding: 1.1rem;
+        background: rgba(100, 255, 218, 0.1);
+        border-radius: 8px;
+        border: 1px solid rgba(100, 255, 218, 0.2);
+      }
+
+      .heatmap-item img {
+        max-width: 100%;
+        height: auto;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      }
+
+      .heatmap-item h3 {
+        color: #64ffda;
+        margin-bottom: 0.5rem;
+        font-size: 1.2rem;
+      }
+
+      /* Download Button */
+      .download-btn {
+        display: inline-block;
+        background: linear-gradient(45deg, #64ffda, #8892b0);
+        color: #0a192f;
+        padding: 0.68rem 1.1rem;
+        text-decoration: none;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-top: 0.5rem;
+      }
+
+      .download-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(100, 255, 218, 0.4);
+      }
+
+      .legend-section {
+        position: fixed;
+        bottom: 140px;
+        /* slightly above About section */
+        left: 20px;
+        /* align to the left side */
+        background: rgba(10, 25, 47, 0.8);
+        padding: 1rem;
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(100, 255, 218, 0.2);
+        max-width: 300px;
+        display: none;
+        transform: translateX(0);
+        transition: transform 0.3s ease;
+      }
+
+      .legend-section:hover {
+        transform: translateX(10px);
+      }
+
+      .legend-section img {
+        width: 100%;
+        border-radius: 8px;
+      }
+
+      .site-footer {
+        margin-top: auto;
+        background: rgba(8, 20, 38, 0.88);
+        border: 1px solid rgba(100, 255, 218, 0.2);
+        border-radius: 12px;
+        padding: 1rem 1.2rem;
+        color: #d6ebff;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.8rem 1.6rem;
+        justify-content: space-between;
+        align-items: center;
+      }
+
+      .footer-title {
+        color: #9fe9d6;
+        font-weight: 600;
+        margin-right: 0.6rem;
+      }
+
+      .footer-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem 1rem;
+        align-items: center;
+        font-size: 0.92rem;
+      }
+
+      .site-footer a {
+        color: #64ffda;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .site-footer a:hover {
+        text-decoration: underline;
+      }
+
+      /* Loading Animation */
+      .loader-container {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(10, 25, 47, 0.8);
+        backdrop-filter: blur(5px);
+        z-index: 1000;
+        justify-content: center;
+        align-items: center;
+        flex-direction: column;
+      }
+
+      .wave-loader {
+        display: flex;
+        gap: 6px;
+        height: 50px;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+
+      .wave-loader div {
+        width: 6px;
+        height: 30px;
+        background: #64ffda;
+        border-radius: 3px;
+        animation: wave 1.2s infinite ease-in-out;
+      }
+
+      .wave-loader div:nth-child(1) {
+        animation-delay: -0.4s;
+      }
+
+      .wave-loader div:nth-child(2) {
+        animation-delay: -0.2s;
+      }
+
+      .wave-loader div:nth-child(3) {
+        animation-delay: 0s;
+      }
+
+      .wave-loader div:nth-child(4) {
+        animation-delay: 0.2s;
+      }
+
+      .wave-loader div:nth-child(5) {
+        animation-delay: 0.4s;
+      }
+
+      @keyframes wave {
+        0%,
+        100% {
+          transform: scaleY(1);
         }
 
-        /* Background Image Overlay */
-        body::before {
-            content: '';
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: url('/static/images/bg.jpg') no-repeat center center;
-            background-size: cover;
-            opacity: 0.1;
-            z-index: -1;
+        50% {
+          transform: scaleY(2);
         }
+      }
 
-        /* Main Container */
+      /* Responsive Design */
+      @media (max-width: 768px) {
         .container {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 28px 28px 40px;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
+          padding: 1rem 1rem 2rem;
         }
 
-        /* Title Section */
-        .title-section {
-            min-height: 160px;
-            padding: 24px 0 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        /* Main Heading */
         h1 {
-            color: #64ffda;
-            text-align: center;
-            font-size: 3.2rem;
-            line-height: 1.2;
-            margin-bottom: 1.2rem;
-            text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
-            animation: glow 2s ease-in-out infinite alternate;
+          font-size: 2.2rem;
         }
 
-        h2 {
-            margin-bottom: 1rem;
-            font-size: 1.45rem;
-            color: #dff6ff;
-        }
-
-        h3 {
-            margin-bottom: 0.9rem;
-            font-size: 1.1rem;
-            color: #9fe9d6;
-            font-weight: 600;
-        }
-
-        .content-section {
-            width: 100%;
-            display: flex;
-            justify-content: center;
-        }
-
-        /* Glow Animation */
-        @keyframes glow {
-            from {
-                text-shadow: 0 0 10px rgba(100, 255, 218, 0.3);
-            }
-
-            to {
-                text-shadow: 0 0 20px rgba(100, 255, 218, 0.6);
-            }
-        }
-
-        /* Upload Section */
         .upload-section {
-            background: rgba(10, 25, 47, 0.8);
-            padding: 2rem 2rem 1.5rem;
-            border-radius: 16px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
-            width: min(940px, 100%);
-            margin: 0 auto;
-            border: 1px solid rgba(100, 255, 218, 0.2);
-            transition: transform 0.3s ease;
+          padding: 1.2rem;
         }
 
-        .upload-section:hover {
-            transform: translateY(-5px);
-        }
-
-        .mode-selector {
-            display: flex;
-            gap: 1rem;
-            margin-bottom: 1.25rem;
-            justify-content: center;
-            flex-wrap: wrap;
-        }
-
-        .mode-btn {
-            background: rgba(100, 255, 218, 0.15);
-            color: #64ffda;
-            border: 1px solid rgba(100, 255, 218, 0.4);
-        }
-
-        .mode-btn.active {
-            background: linear-gradient(45deg, #64ffda, #8892b0);
-            color: #0a192f;
-        }
-
-        .mode-panel {
-            display: none;
-            margin-top: 0.8rem;
-        }
-
-        .mode-panel.active {
-            display: block;
-        }
-
-        /* File Input Styles */
         .file-input-container {
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            margin-bottom: 1.2rem;
-        }
-
-        input[type="file"] {
-            background: rgba(100, 255, 218, 0.1);
-            color: white;
-            padding: 0.78rem 1rem;
-            border-radius: 8px;
-            border: 1px solid #64ffda;
-            flex-grow: 1;
-            transition: all 0.3s ease;
-        }
-
-        input[type="file"]:hover {
-            background: rgba(100, 255, 218, 0.2);
-        }
-
-        .mqtt-form-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 0.9rem;
-            margin-bottom: 1.2rem;
-        }
-
-        .mqtt-form-grid input,
-        .mqtt-form-grid select {
-            background: rgba(100, 255, 218, 0.1);
-            color: white;
-            min-height: 42px;
-            padding: 0.65rem 0.75rem;
-            border-radius: 8px;
-            border: 1px solid rgba(100, 255, 218, 0.35);
-        }
-
-        .mqtt-form-grid input::placeholder {
-            color: #b9d3ff;
-        }
-
-        .mqtt-actions {
-            display: flex;
-            gap: 0.8rem;
-            flex-wrap: wrap;
-            margin-bottom: 1.2rem;
-        }
-
-        .status-box {
-            background: rgba(12, 30, 57, 0.7);
-            border: 1px solid rgba(100, 255, 218, 0.25);
-            border-radius: 10px;
-            padding: 1rem;
-            font-size: 0.92rem;
-            line-height: 1.4rem;
-            color: #d5e7ff;
-        }
-
-        .metric-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-            gap: 0.7rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .metric-card {
-            background: rgba(100, 255, 218, 0.08);
-            border: 1px solid rgba(100, 255, 218, 0.2);
-            border-radius: 8px;
-            padding: 0.6rem;
-        }
-
-        .metric-card .label {
-            font-size: 0.78rem;
-            color: #9bc2e3;
-        }
-
-        .metric-card .value {
-            font-size: 1.05rem;
-            color: #dff6ff;
-            margin-top: 0.2rem;
-            font-weight: 600;
+          flex-direction: column;
+          align-items: stretch;
         }
 
         .spec-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.4rem 0.8rem;
-            margin-bottom: 0.8rem;
+          grid-template-columns: 1fr;
         }
-
-        .spec-item {
-            font-size: 0.86rem;
-            color: #cae3f7;
-        }
-
-        .payload-preview {
-            background: rgba(0, 0, 0, 0.28);
-            border-radius: 6px;
-            padding: 0.6rem;
-            white-space: pre-wrap;
-            word-break: break-word;
-            font-size: 0.82rem;
-        }
-
-        /* Button Styles */
-        button {
-            background: linear-gradient(45deg, #64ffda, #8892b0);
-            color: #0a192f;
-            min-height: 42px;
-            padding: 0.7rem 1.2rem;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(100, 255, 218, 0.4);
-        }
-
-        /* Refresh Button */
-        .refresh-btn {
-            display: none;
-            margin: 20px auto;
-            padding: 10px 20px;
-            font-size: 16px;
-            background: linear-gradient(45deg, #ff6b6b, #ff8e53);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            box-shadow: 0 2px 10px rgba(255, 107, 107, 0.3);
-            width: fit-content;
-        }
-
-        .refresh-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(255, 107, 107, 0.4);
-        }
-
-        .refresh-btn.show {
-            display: block;
-        }
-
-        /* Map Container */
-        #map-container {
-            margin-top: 1.4rem;
-            text-align: center;
-        }
-
-        /* Heatmap Item */
-        .heatmap-item {
-            margin: 1.1rem 0;
-            padding: 1.1rem;
-            background: rgba(100, 255, 218, 0.1);
-            border-radius: 8px;
-            border: 1px solid rgba(100, 255, 218, 0.2);
-        }
-
-        .heatmap-item img {
-            max-width: 100%;
-            height: auto;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
-        }
-
-        .heatmap-item h3 {
-            color: #64ffda;
-            margin-bottom: 0.5rem;
-            font-size: 1.2rem;
-        }
-
-        /* Download Button */
-        .download-btn {
-            display: inline-block;
-            background: linear-gradient(45deg, #64ffda, #8892b0);
-            color: #0a192f;
-            padding: 0.68rem 1.1rem;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin-top: 0.5rem;
-        }
-
-        .download-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(100, 255, 218, 0.4);
-        }
-
-        .legend-section {
-            position: fixed;
-            bottom: 140px;
-            /* slightly above About section */
-            left: 20px;
-            /* align to the left side */
-            background: rgba(10, 25, 47, 0.8);
-            padding: 1rem;
-            border-radius: 10px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 0 20px rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(100, 255, 218, 0.2);
-            max-width: 300px;
-            display: none;
-            transform: translateX(0);
-            transition: transform 0.3s ease;
-        }
-
-        .legend-section:hover {
-            transform: translateX(10px);
-        }
-
-        .legend-section img {
-            width: 100%;
-            border-radius: 8px;
-        }
-
 
         .site-footer {
-            margin-top: auto;
-            background: rgba(8, 20, 38, 0.88);
-            border: 1px solid rgba(100, 255, 218, 0.2);
-            border-radius: 12px;
-            padding: 1rem 1.2rem;
-            color: #d6ebff;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.8rem 1.6rem;
-            justify-content: space-between;
-            align-items: center;
+          flex-direction: column;
+          align-items: flex-start;
         }
-
-        .footer-title {
-            color: #9fe9d6;
-            font-weight: 600;
-            margin-right: 0.6rem;
-        }
-
-        .footer-group {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 0.45rem 1rem;
-            align-items: center;
-            font-size: 0.92rem;
-        }
-
-        .site-footer a {
-            color: #64ffda;
-            text-decoration: none;
-            font-weight: 600;
-        }
-
-        .site-footer a:hover {
-            text-decoration: underline;
-        }
-
-        /* Loading Animation */
-        .loader-container {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(10, 25, 47, 0.8);
-            backdrop-filter: blur(5px);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-        }
-
-        .wave-loader {
-            display: flex;
-            gap: 6px;
-            height: 50px;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-
-        .wave-loader div {
-            width: 6px;
-            height: 30px;
-            background: #64ffda;
-            border-radius: 3px;
-            animation: wave 1.2s infinite ease-in-out;
-        }
-
-        .wave-loader div:nth-child(1) {
-            animation-delay: -0.4s;
-        }
-
-        .wave-loader div:nth-child(2) {
-            animation-delay: -0.2s;
-        }
-
-        .wave-loader div:nth-child(3) {
-            animation-delay: 0s;
-        }
-
-        .wave-loader div:nth-child(4) {
-            animation-delay: 0.2s;
-        }
-
-        .wave-loader div:nth-child(5) {
-            animation-delay: 0.4s;
-        }
-
-        @keyframes wave {
-
-            0%,
-            100% {
-                transform: scaleY(1);
-            }
-
-            50% {
-                transform: scaleY(2);
-            }
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .container {
-                padding: 1rem 1rem 2rem;
-            }
-
-            h1 {
-                font-size: 2.2rem;
-            }
-
-            .upload-section {
-                padding: 1.2rem;
-            }
-
-            .file-input-container {
-                flex-direction: column;
-                align-items: stretch;
-            }
-
-            .spec-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .site-footer {
-                flex-direction: column;
-                align-items: flex-start;
-            }
-        }
+      }
     </style>
-</head>
+  </head>
 
-<body>
+  <body>
     <!-- Loading Overlay -->
     <div class="loader-container" id="loader">
-        <div class="wave-loader">
-            <div></div>
-            <div></div>
-            <div></div>
-            <div></div>
-            <div></div>
-        </div>
-        <div class="loader-text">Generating Heatmaps...</div>
+      <div class="wave-loader">
+        <div></div>
+        <div></div>
+        <div></div>
+        <div></div>
+        <div></div>
+      </div>
+      <div class="loader-text">Generating Heatmaps...</div>
     </div>
 
     <!-- Main Content -->
     <div class="container">
-        <div class="title-section">
-            <h1>Pollution Monitoring using Heatmaps</h1>
-        </div>
+      <div class="title-section">
+        <h1>Pollution Monitoring using Heatmaps</h1>
+      </div>
 
-        <div class="content-section">
-            <div class="upload-section">
-                <div id="inputArea">
-                    <h2>Choose Input Source</h2>
-                    <div class="mode-selector">
-                        <button type="button" id="csvModeBtn" class="mode-btn" onclick="switchMode('csv')">Upload CSV</button>
-                        <button type="button" id="mqttModeBtn" class="mode-btn" onclick="switchMode('mqtt')">Use MQTT Credentials</button>
-                    </div>
+      <div class="content-section">
+        <div class="upload-section">
+          <div id="inputArea">
+            <h2>Choose Input Source</h2>
+            <div class="mode-selector">
+              <button
+                type="button"
+                id="csvModeBtn"
+                class="mode-btn"
+                onclick="switchMode('csv')"
+              >
+                Upload CSV
+              </button>
+              <button
+                type="button"
+                id="mqttModeBtn"
+                class="mode-btn"
+                onclick="switchMode('mqtt')"
+              >
+                Use MQTT Credentials
+              </button>
+            </div>
 
-                    <div id="csv-panel" class="mode-panel">
-                        <h3>Upload CSV with Latitude, Longitude & Pollutants</h3>
-                        <div class="file-input-container">
-                            <input type="file" id="csvFile" accept=".csv">
-                            <button type="button" onclick="uploadFile()">Upload</button>
-                        </div>
-                    </div>
+            <div id="csv-panel" class="mode-panel">
+              <h3>Upload CSV with Latitude, Longitude & Pollutants</h3>
+              <div class="file-input-container">
+                <input type="file" id="csvFile" accept=".csv" />
+                <button type="button" onclick="uploadFile()">Upload</button>
+              </div>
+            </div>
 
-                    <div id="mqtt-panel" class="mode-panel">
-                        <h3>MQTT Connection</h3>
-                        <div class="mqtt-form-grid">
-                            <input id="mqttBroker" placeholder="Broker (e.g. broker.hivemq.com)" value="{{ mqtt_defaults.broker }}">
-                            <input id="mqttPort" placeholder="Port (default 1883)" value="{{ mqtt_defaults.port }}">
-                            <input id="mqttTopic" placeholder="Topic (e.g. esp32/sensors)" value="{{ mqtt_defaults.topic }}">
-                            <input id="mqttClientId" placeholder="Client ID (optional)" value="{{ mqtt_defaults.client_id }}">
-                            <input id="mqttUsername" placeholder="Username (optional)" value="{{ mqtt_defaults.username }}">
-                            <input id="mqttPassword" type="password" placeholder="Password (optional)" value="{{ mqtt_defaults.password }}">
-                            <input id="mqttKeepalive" placeholder="Keepalive (seconds)" value="{{ mqtt_defaults.keepalive }}">
-                            <select id="mqttQos">
-                                <option value="0" {% if mqtt_defaults.qos == 0 %}selected{% endif %}>QoS 0</option>
-                                <option value="1" {% if mqtt_defaults.qos == 1 %}selected{% endif %}>QoS 1</option>
-                                <option value="2" {% if mqtt_defaults.qos == 2 %}selected{% endif %}>QoS 2</option>
-                            </select>
-                        </div>
-                        <div class="mqtt-actions">
-                            <button type="button" onclick="connectMqtt()">Connect MQTT</button>
-                            <button type="button" onclick="disconnectMqtt()">Disconnect</button>
-                            <button type="button" onclick="processMqttData()">Generate Heatmaps from MQTT Data</button>
-                        </div>
-                        <div class="status-box">
-                            <div class="metric-grid">
-                                <div class="metric-card"><div class="label">Connection</div><div class="value" id="mConnected">-</div></div>
-                                <div class="metric-card"><div class="label">Messages</div><div class="value" id="mMessages">0</div></div>
-                                <div class="metric-card"><div class="label">Rows Buffered</div><div class="value" id="mRows">0</div></div>
-                                <div class="metric-card"><div class="label">CSV Stored</div><div class="value" id="mCsv">No</div></div>
-                            </div>
-                            <div class="spec-grid">
-                                <div class="spec-item"><strong>Broker:</strong> <span id="mBroker">-</span></div>
-                                <div class="spec-item"><strong>Port:</strong> <span id="mPort">-</span></div>
-                                <div class="spec-item"><strong>Topic:</strong> <span id="mTopic">-</span></div>
-                                <div class="spec-item"><strong>Client ID:</strong> <span id="mClientId">-</span></div>
-                                <div class="spec-item"><strong>Username:</strong> <span id="mUsername">-</span></div>
-                                <div class="spec-item"><strong>QoS:</strong> <span id="mQos">-</span></div>
-                                <div class="spec-item"><strong>Keepalive:</strong> <span id="mKeepalive">-</span></div>
-                                <div class="spec-item"><strong>Last Message:</strong> <span id="mLastAt">-</span></div>
-                            </div>
-                            <div class="spec-item"><strong>Last Error:</strong> <span id="mLastError">-</span></div>
-                            <div class="spec-item" style="margin-top:0.4rem;"><strong>Last Payload Preview:</strong></div>
-                            <div class="payload-preview" id="mLastPayload">-</div>
-                        </div>
-                    </div>
+            <div id="mqtt-panel" class="mode-panel">
+              <h3>MQTT Connection</h3>
+              <div class="mqtt-form-grid">
+                <input
+                  id="mqttBroker"
+                  placeholder="Broker (e.g. broker.hivemq.com)"
+                  value="{{ mqtt_defaults.broker }}"
+                />
+                <input
+                  id="mqttPort"
+                  placeholder="Port (default 1883)"
+                  value="{{ mqtt_defaults.port }}"
+                />
+                <input
+                  id="mqttTopic"
+                  placeholder="Topic (e.g. esp32/sensors)"
+                  value="{{ mqtt_defaults.topic }}"
+                />
+                <input
+                  id="mqttClientId"
+                  placeholder="Client ID (optional)"
+                  value="{{ mqtt_defaults.client_id }}"
+                />
+                <input
+                  id="mqttUsername"
+                  placeholder="Username (optional)"
+                  value="{{ mqtt_defaults.username }}"
+                />
+                <input
+                  id="mqttPassword"
+                  type="password"
+                  placeholder="Password (optional)"
+                  value="{{ mqtt_defaults.password }}"
+                />
+                <input
+                  id="mqttKeepalive"
+                  placeholder="Keepalive (seconds)"
+                  value="{{ mqtt_defaults.keepalive }}"
+                />
+                <select id="mqttQos">
+                  <option
+                    value="0"
+                    {%
+                    if
+                    mqtt_defaults.qos=""
+                    ="0"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 0
+                  </option>
+                  <option
+                    value="1"
+                    {%
+                    if
+                    mqtt_defaults.qos=""
+                    ="1"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 1
+                  </option>
+                  <option
+                    value="2"
+                    {%
+                    if
+                    mqtt_defaults.qos=""
+                    ="2"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 2
+                  </option>
+                </select>
+              </div>
+              <div class="mqtt-actions">
+                <button type="button" onclick="connectMqtt()">
+                  Connect MQTT
+                </button>
+                <button type="button" onclick="disconnectMqtt()">
+                  Disconnect
+                </button>
+                <button type="button" onclick="processMqttData()">
+                  Generate Heatmaps from MQTT Data
+                </button>
+              </div>
+              <div class="status-box">
+                <div class="metric-grid">
+                  <div class="metric-card">
+                    <div class="label">Connection</div>
+                    <div class="value" id="mConnected">-</div>
+                  </div>
+                  <div class="metric-card">
+                    <div class="label">Messages</div>
+                    <div class="value" id="mMessages">0</div>
+                  </div>
+                  <div class="metric-card">
+                    <div class="label">Rows Buffered</div>
+                    <div class="value" id="mRows">0</div>
+                  </div>
+                  <div class="metric-card">
+                    <div class="label">CSV Stored</div>
+                    <div class="value" id="mCsv">No</div>
+                  </div>
                 </div>
-
-                <div id="map-container">
-                    <!-- Heatmaps will be dynamically added here -->
+                <div class="spec-grid">
+                  <div class="spec-item">
+                    <strong>Broker:</strong> <span id="mBroker">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Port:</strong> <span id="mPort">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Topic:</strong> <span id="mTopic">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Client ID:</strong> <span id="mClientId">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Username:</strong> <span id="mUsername">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>QoS:</strong> <span id="mQos">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Keepalive:</strong> <span id="mKeepalive">-</span>
+                  </div>
+                  <div class="spec-item">
+                    <strong>Last Message:</strong> <span id="mLastAt">-</span>
+                  </div>
                 </div>
-                <button type="button" class="refresh-btn" id="refreshBtn" onclick="refreshPage()">Refresh</button>
+                <div class="spec-item">
+                  <strong>Last Error:</strong> <span id="mLastError">-</span>
+                </div>
+                <div class="spec-item" style="margin-top: 0.4rem">
+                  <strong>Last Payload Preview:</strong>
+                </div>
+                <div class="payload-preview" id="mLastPayload">-</div>
+              </div>
             </div>
+          </div>
+
+          <div id="map-container">
+            <!-- Heatmaps will be dynamically added here -->
+          </div>
+          <button
+            type="button"
+            class="refresh-btn"
+            id="refreshBtn"
+            onclick="refreshPage()"
+          >
+            Refresh
+          </button>
         </div>
-        <div class="legend-section" id="legendBox">
-            <h2>Legend</h2>
-            <img src="/static/images/legend.png" alt="Legend">
+      </div>
+      <div class="legend-section" id="legendBox">
+        <h2>Legend</h2>
+        <img src="/static/images/legend.png" alt="Legend" />
+      </div>
+
+      <footer class="site-footer">
+        <div class="footer-group">
+          <span class="footer-title">Project Contributors:</span>
+          <span>Aditya Jadhav (32323)</span>
+          <span>Om Kothawade (32338)</span>
+          <span>Atharva Dhapse (32316)</span>
         </div>
-
-
-
-        <footer class="site-footer">
-            <div class="footer-group">
-                <span class="footer-title">Project Contributors:</span>
-                <span>Aditya Jadhav (32323)</span>
-                <span>Om Kothawade (32338)</span>
-                <span>Atharva Dhapse (32316)</span>
-            </div>
-            <div class="footer-group">
-                <span class="footer-title">GitHub:</span>
-                <a href="https://github.com/adityajadhav5905/SE_PBL_Pollution_Monitoring" target="_blank" rel="noopener noreferrer">SE_PBL_Pollution_Monitoring</a>
-            </div>
-        </footer>
+        <div class="footer-group">
+          <span class="footer-title">GitHub:</span>
+          <a
+            href="https://github.com/adityajadhav5905/Pollution-Visualization"
+            target="_blank"
+            rel="noopener noreferrer"
+            >Pollution_Visualization Device</a
+          >
+        </div>
+      </footer>
     </div>
 
     <!-- JavaScript -->
     <script>
-        let currentMode = null;
-        let mqttStatusInterval = null;
+      let currentMode = null;
+      let mqttStatusInterval = null;
 
-        function switchMode(mode) {
-            currentMode = mode;
-            document.getElementById('csvModeBtn').classList.toggle('active', mode === 'csv');
-            document.getElementById('mqttModeBtn').classList.toggle('active', mode === 'mqtt');
-            document.getElementById('csv-panel').classList.toggle('active', mode === 'csv');
-            document.getElementById('mqtt-panel').classList.toggle('active', mode === 'mqtt');
-            if (mode === 'mqtt') {
-                startMqttPolling();
-            } else {
-                stopMqttPolling();
-            }
+      function switchMode(mode) {
+        currentMode = mode;
+        document
+          .getElementById("csvModeBtn")
+          .classList.toggle("active", mode === "csv");
+        document
+          .getElementById("mqttModeBtn")
+          .classList.toggle("active", mode === "mqtt");
+        document
+          .getElementById("csv-panel")
+          .classList.toggle("active", mode === "csv");
+        document
+          .getElementById("mqtt-panel")
+          .classList.toggle("active", mode === "mqtt");
+        if (mode === "mqtt") {
+          startMqttPolling();
+        } else {
+          stopMqttPolling();
+        }
+      }
+
+      function updateText(id, value, fallback = "-") {
+        document.getElementById(id).textContent =
+          value === undefined || value === null || value === ""
+            ? fallback
+            : value;
+      }
+
+      function startMqttPolling() {
+        if (mqttStatusInterval) return;
+        pollMqttStatus();
+        mqttStatusInterval = setInterval(pollMqttStatus, 3000);
+      }
+
+      function stopMqttPolling() {
+        if (mqttStatusInterval) {
+          clearInterval(mqttStatusInterval);
+          mqttStatusInterval = null;
+        }
+      }
+
+      function setLoader(active, text = "Generating Heatmaps...") {
+        const loader = document.getElementById("loader");
+        loader.querySelector(".loader-text").textContent = text;
+        loader.style.display = active ? "flex" : "none";
+      }
+
+      function renderResults(data) {
+        const mapContainer = document.getElementById("map-container");
+        const refreshBtn = document.getElementById("refreshBtn");
+        mapContainer.innerHTML = "";
+
+        if (data.error) {
+          alert(data.error);
+          if (data.details) console.error("Details:", data.details);
+          return;
         }
 
-        function updateText(id, value, fallback = '-') {
-            document.getElementById(id).textContent = (value === undefined || value === null || value === '') ? fallback : value;
+        if (data.csv_path) {
+          const csvDownload = document.createElement("a");
+          csvDownload.className = "download-btn";
+          const csvName = data.csv_path.replace(/^.*[\\/]/, "");
+          csvDownload.href = `/download/${encodeURIComponent(csvName)}`;
+          csvDownload.download = csvName;
+          csvDownload.textContent = "Download Generated CSV";
+          mapContainer.appendChild(csvDownload);
         }
 
-        function startMqttPolling() {
-            if (mqttStatusInterval) return;
-            pollMqttStatus();
-            mqttStatusInterval = setInterval(pollMqttStatus, 3000);
+        document.getElementById("inputArea").style.display = "none";
+        stopMqttPolling();
+        refreshBtn.classList.add("show");
+        document.getElementById("legendBox").style.display = "block";
+
+        data.results.forEach((result) => {
+          if (result.error) {
+            alert(`Error for ${result.column}: ${result.error}`);
+            return;
+          }
+
+          const heatmapItem = document.createElement("div");
+          heatmapItem.className = "heatmap-item";
+
+          const title = document.createElement("h3");
+          title.textContent = `${result.column} Heatmap`;
+          heatmapItem.appendChild(title);
+
+          const img = document.createElement("img");
+          img.src = result.map_path + "?t=" + new Date().getTime();
+          img.alt = `${result.column} heatmap`;
+          heatmapItem.appendChild(img);
+
+          const downloadBtn = document.createElement("a");
+          downloadBtn.className = "download-btn";
+          const filename = result.map_path.replace(/^.*[\\/]/, "");
+          downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
+          downloadBtn.download = filename;
+          downloadBtn.textContent = `Download ${result.column} Heatmap`;
+          heatmapItem.appendChild(downloadBtn);
+          mapContainer.appendChild(heatmapItem);
+        });
+      }
+
+      // File upload handler
+      function uploadFile() {
+        const fileInput = document.getElementById("csvFile");
+        const file = fileInput.files[0];
+
+        if (!file) {
+          alert("Please select a CSV file first");
+          return;
         }
 
-        function stopMqttPolling() {
-            if (mqttStatusInterval) {
-                clearInterval(mqttStatusInterval);
-                mqttStatusInterval = null;
-            }
+        setLoader(true, "Processing CSV...");
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        fetch("/upload", {
+          method: "POST",
+          body: formData,
+        })
+          .then((response) => response.json())
+          .then((data) => {
+            renderResults(data);
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+            alert(
+              "An error occurred while uploading the file. Please try again.",
+            );
+          })
+          .finally(() => setLoader(false));
+      }
+
+      function getMqttPayload() {
+        return {
+          broker: document.getElementById("mqttBroker").value.trim(),
+          port: document.getElementById("mqttPort").value.trim(),
+          topic: document.getElementById("mqttTopic").value.trim(),
+          client_id: document.getElementById("mqttClientId").value.trim(),
+          username: document.getElementById("mqttUsername").value.trim(),
+          password: document.getElementById("mqttPassword").value,
+          keepalive: document.getElementById("mqttKeepalive").value.trim(),
+          qos: document.getElementById("mqttQos").value,
+        };
+      }
+
+      function connectMqtt() {
+        const payload = getMqttPayload();
+        if (!payload.broker || !payload.topic) {
+          alert("Broker and Topic are mandatory for MQTT connection.");
+          return;
         }
-
-        function setLoader(active, text = 'Generating Heatmaps...') {
-            const loader = document.getElementById('loader');
-            loader.querySelector('.loader-text').textContent = text;
-            loader.style.display = active ? 'flex' : 'none';
-        }
-
-        function renderResults(data) {
-            const mapContainer = document.getElementById('map-container');
-            const refreshBtn = document.getElementById('refreshBtn');
-            mapContainer.innerHTML = '';
-
+        setLoader(true, "Connecting to MQTT...");
+        fetch("/mqtt/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
+          .then((r) => r.json())
+          .then((data) => {
             if (data.error) {
-                alert(data.error);
-                if (data.details) console.error('Details:', data.details);
-                return;
+              alert(data.error);
+            } else {
+              alert("MQTT connection initiated. Start publishing from ESP32.");
+              startMqttPolling();
             }
+          })
+          .catch(() => alert("Unable to connect MQTT."))
+          .finally(() => setLoader(false));
+      }
 
-            if (data.csv_path) {
-                const csvDownload = document.createElement('a');
-                csvDownload.className = 'download-btn';
-                const csvName = data.csv_path.replace(/^.*[\\/]/, '');
-                csvDownload.href = `/download/${encodeURIComponent(csvName)}`;
-                csvDownload.download = csvName;
-                csvDownload.textContent = 'Download Generated CSV';
-                mapContainer.appendChild(csvDownload);
+      function disconnectMqtt() {
+        setLoader(true, "Disconnecting MQTT...");
+        fetch("/mqtt/disconnect", { method: "POST" })
+          .then((r) => r.json())
+          .then((data) => {
+            if (data.error) {
+              alert(data.error);
             }
+            pollMqttStatus();
+          })
+          .catch(() => alert("Unable to disconnect MQTT."))
+          .finally(() => setLoader(false));
+      }
 
-            document.getElementById('inputArea').style.display = 'none';
-            stopMqttPolling();
-            refreshBtn.classList.add('show');
-            document.getElementById('legendBox').style.display = 'block';
+      function processMqttData() {
+        setLoader(true, "Generating heatmaps from MQTT data...");
+        fetch("/mqtt/process", { method: "POST" })
+          .then((r) => r.json())
+          .then((data) => renderResults(data))
+          .catch(() => alert("Unable to process MQTT data right now."))
+          .finally(() => setLoader(false));
+      }
 
-            data.results.forEach(result => {
-                if (result.error) {
-                    alert(`Error for ${result.column}: ${result.error}`);
-                    return;
-                }
+      function pollMqttStatus() {
+        fetch("/mqtt/status")
+          .then((r) => r.json())
+          .then((data) => {
+            updateText(
+              "mConnected",
+              data.connected ? "Connected" : "Disconnected",
+            );
+            updateText("mMessages", data.messages_received ?? 0, "0");
+            updateText("mRows", data.rows_buffered ?? 0, "0");
+            updateText("mCsv", data.csv_file ? "Yes" : "No");
+            updateText("mBroker", data.broker);
+            updateText("mPort", data.port);
+            updateText("mTopic", data.topic);
+            updateText("mClientId", data.client_id);
+            updateText("mUsername", data.username || "-", "-");
+            updateText("mQos", data.qos);
+            updateText("mKeepalive", data.keepalive);
+            updateText("mLastAt", data.last_message_at);
+            updateText("mLastError", data.last_error || "-", "-");
+            updateText("mLastPayload", data.last_payload_preview || "-", "-");
+          })
+          .catch(() => {
+            updateText("mLastError", "Unable to fetch MQTT status.");
+          });
+      }
 
-                const heatmapItem = document.createElement('div');
-                heatmapItem.className = 'heatmap-item';
+      // Refresh handler
+      function refreshPage() {
+        const refreshBtn = document.getElementById("refreshBtn");
+        setLoader(true, "Clearing files...");
 
-                const title = document.createElement('h3');
-                title.textContent = `${result.column} Heatmap`;
-                heatmapItem.appendChild(title);
+        // Hide the refresh button immediately
+        refreshBtn.classList.remove("show");
+        document.getElementById("legendBox").style.display = "none";
 
-                const img = document.createElement('img');
-                img.src = result.map_path + '?t=' + new Date().getTime();
-                img.alt = `${result.column} heatmap`;
-                heatmapItem.appendChild(img);
-
-                const downloadBtn = document.createElement('a');
-                downloadBtn.className = 'download-btn';
-                const filename = result.map_path.replace(/^.*[\\/]/, '');
-                downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
-                downloadBtn.download = filename;
-                downloadBtn.textContent = `Download ${result.column} Heatmap`;
-                heatmapItem.appendChild(downloadBtn);
-                mapContainer.appendChild(heatmapItem);
-            });
-        }
-
-        // File upload handler
-        function uploadFile() {
-            const fileInput = document.getElementById('csvFile');
-            const file = fileInput.files[0];
-
-            if (!file) {
-                alert('Please select a CSV file first');
-                return;
+        fetch("/clear", { method: "POST" })
+          .then((response) => response.json())
+          .then((data) => {
+            if (data.error) {
+              alert(data.error);
+            } else {
+              window.location.href = "/";
             }
-
-            setLoader(true, 'Processing CSV...');
-
-            const formData = new FormData();
-            formData.append("file", file);
-
-            fetch('/upload', {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    renderResults(data);
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('An error occurred while uploading the file. Please try again.');
-                })
-                .finally(() => setLoader(false));
-        }
-
-        function getMqttPayload() {
-            return {
-                broker: document.getElementById('mqttBroker').value.trim(),
-                port: document.getElementById('mqttPort').value.trim(),
-                topic: document.getElementById('mqttTopic').value.trim(),
-                client_id: document.getElementById('mqttClientId').value.trim(),
-                username: document.getElementById('mqttUsername').value.trim(),
-                password: document.getElementById('mqttPassword').value,
-                keepalive: document.getElementById('mqttKeepalive').value.trim(),
-                qos: document.getElementById('mqttQos').value
-            };
-        }
-
-        function connectMqtt() {
-            const payload = getMqttPayload();
-            if (!payload.broker || !payload.topic) {
-                alert('Broker and Topic are mandatory for MQTT connection.');
-                return;
-            }
-            setLoader(true, 'Connecting to MQTT...');
-            fetch('/mqtt/connect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.error) {
-                        alert(data.error);
-                    } else {
-                        alert('MQTT connection initiated. Start publishing from ESP32.');
-                        startMqttPolling();
-                    }
-                })
-                .catch(() => alert('Unable to connect MQTT.'))
-                .finally(() => setLoader(false));
-        }
-
-        function disconnectMqtt() {
-            setLoader(true, 'Disconnecting MQTT...');
-            fetch('/mqtt/disconnect', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.error) {
-                        alert(data.error);
-                    }
-                    pollMqttStatus();
-                })
-                .catch(() => alert('Unable to disconnect MQTT.'))
-                .finally(() => setLoader(false));
-        }
-
-        function processMqttData() {
-            setLoader(true, 'Generating heatmaps from MQTT data...');
-            fetch('/mqtt/process', { method: 'POST' })
-                .then(r => r.json())
-                .then(data => renderResults(data))
-                .catch(() => alert('Unable to process MQTT data right now.'))
-                .finally(() => setLoader(false));
-        }
-
-        function pollMqttStatus() {
-            fetch('/mqtt/status')
-                .then(r => r.json())
-                .then(data => {
-                    updateText('mConnected', data.connected ? 'Connected' : 'Disconnected');
-                    updateText('mMessages', data.messages_received ?? 0, '0');
-                    updateText('mRows', data.rows_buffered ?? 0, '0');
-                    updateText('mCsv', data.csv_file ? 'Yes' : 'No');
-                    updateText('mBroker', data.broker);
-                    updateText('mPort', data.port);
-                    updateText('mTopic', data.topic);
-                    updateText('mClientId', data.client_id);
-                    updateText('mUsername', data.username || '-', '-');
-                    updateText('mQos', data.qos);
-                    updateText('mKeepalive', data.keepalive);
-                    updateText('mLastAt', data.last_message_at);
-                    updateText('mLastError', data.last_error || '-', '-');
-                    updateText('mLastPayload', data.last_payload_preview || '-', '-');
-
-                })
-                .catch(() => {
-                    updateText('mLastError', 'Unable to fetch MQTT status.');
-                });
-        }
-
-        // Refresh handler
-        function refreshPage() {
-            const refreshBtn = document.getElementById('refreshBtn');
-            setLoader(true, 'Clearing files...');
-
-            // Hide the refresh button immediately
-            refreshBtn.classList.remove('show');
-            document.getElementById('legendBox').style.display = 'none';
-
-
-            fetch('/clear', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.error) {
-                        alert(data.error);
-                    } else {
-                        window.location.href = '/';
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    alert('An error occurred while clearing files.');
-                })
-                .finally(() => {
-                    setLoader(false);
-                });
-        }
+          })
+          .catch((error) => {
+            console.error("Error:", error);
+            alert("An error occurred while clearing files.");
+          })
+          .finally(() => {
+            setLoader(false);
+          });
+      }
     </script>
-
-</body>
-
+  </body>
 </html>
