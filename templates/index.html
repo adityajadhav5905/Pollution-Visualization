@@ -598,37 +598,19 @@
                 <select id="mqttQos">
                   <option
                     value="0"
-                    {%
-                    if
-                    mqtt_defaults.qos=""
-                    ="0"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if mqtt_defaults.qos == 0 %}selected{% endif %}
                   >
                     QoS 0
                   </option>
                   <option
                     value="1"
-                    {%
-                    if
-                    mqtt_defaults.qos=""
-                    ="1"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if mqtt_defaults.qos == 1 %}selected{% endif %}
                   >
                     QoS 1
                   </option>
                   <option
                     value="2"
-                    {%
-                    if
-                    mqtt_defaults.qos=""
-                    ="2"
-                    %}selected{%
-                    endif
-                    %}
+                    {% if mqtt_defaults.qos == 2 %}selected{% endif %}
                   >
                     QoS 2
                   </option>
