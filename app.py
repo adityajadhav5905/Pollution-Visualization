@@ -1,176 +1,432 @@
 
-# Import necessary libraries
-from flask import Flask, request, jsonify, send_file, render_template  # Flask web framework and helpers
-import pandas as pd  # For reading and processing CSV files
-import folium  # For generating interactive maps
-from folium.plugins import HeatMap  # For heatmap overlays on maps
-import os  # For file and directory operations
-import glob  # For pattern-based file searching
-import time  # For delays and timing
-import logging  # For logging debug/info/error messages
-from selenium import webdriver  # For browser automation (HTML to PNG)
-from selenium.webdriver.chrome.options import Options  # For configuring Chrome browser
-from sklearn.preprocessing import MinMaxScaler  # For normalizing data
+from flask import Flask, request, jsonify, send_file, render_template
+import pandas as pd
+import folium
+from folium.plugins import HeatMap
+import os
+import glob
+import time
+import json
+import csv
+import ast
+import logging
+import threading
+from datetime import datetime
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from sklearn.preprocessing import MinMaxScaler
+
+try:
+    import paho.mqtt.client as mqtt
+except ImportError:
+    mqtt = None
 
 
-# Initialize Flask app
 app = Flask(__name__)
 
-# Set up logging for debugging and error tracking
 logging.basicConfig(level=logging.DEBUG)
 app.logger.setLevel(logging.DEBUG)
 
-# Configuration for file uploads and allowed file types
-UPLOAD_FOLDER = 'static'  # Folder to store generated files
-ALLOWED_EXTENSIONS = {'csv'}  # Only allow CSV uploads
+UPLOAD_FOLDER = "static"
+ALLOWED_EXTENSIONS = {"csv"}
+MQTT_CSV_FILENAME = "mqtt_stream_data.csv"
+MQTT_CSV_PATH = os.path.join(UPLOAD_FOLDER, MQTT_CSV_FILENAME)
+MQTT_DEFAULTS_FILE = "mqtt_credentials.json"
 
-# Ensure the upload directory exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
+mqtt_lock = threading.Lock()
+mqtt_client = None
+mqtt_rows = []
+mqtt_state = {
+    "connected": False,
+    "broker": "",
+    "port": 1883,
+    "topic": "",
+    "client_id": "",
+    "username": "",
+    "keepalive": 60,
+    "qos": 0,
+    "messages_received": 0,
+    "last_message_at": None,
+    "last_payload_preview": "",
+    "last_error": "",
+    "started_at": None,
+}
+
+
+def load_mqtt_defaults():
+    defaults = {
+        "broker": "",
+        "port": 1883,
+        "topic": "",
+        "client_id": "",
+        "username": "",
+        "password": "",
+        "keepalive": 60,
+        "qos": 0,
+    }
+    if not os.path.exists(MQTT_DEFAULTS_FILE):
+        return defaults
+    try:
+        with open(MQTT_DEFAULTS_FILE, "r", encoding="utf-8") as f:
+            file_data = json.load(f)
+        if isinstance(file_data, dict):
+            defaults.update(file_data)
+    except Exception:
+        pass
+    return defaults
+
 
 def allowed_file(filename):
-    """
-    Check if the uploaded file has an allowed extension (CSV).
-    """
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def sanitize_column_name(column_name):
+    return "".join(ch if ch.isalnum() or ch in ("_", "-", "(", ")") else "_" for ch in column_name).strip("_")
+
+
+def save_mqtt_rows_to_csv():
+    with mqtt_lock:
+        if not mqtt_rows:
+            return
+        df = pd.DataFrame(mqtt_rows)
+    df.to_csv(MQTT_CSV_PATH, index=False)
+
+
+def canonicalize_record(raw_record):
+    if not isinstance(raw_record, dict):
+        return None, "Payload must be a JSON object"
+
+    gps_candidate = raw_record.get("gps") or raw_record.get("GPS")
+    if isinstance(gps_candidate, dict):
+        if "latitude" in gps_candidate and "latitude" not in raw_record and "Latitude" not in raw_record:
+            raw_record["latitude"] = gps_candidate.get("latitude")
+        if "lat" in gps_candidate and "latitude" not in raw_record and "Latitude" not in raw_record:
+            raw_record["latitude"] = gps_candidate.get("lat")
+        if "longitude" in gps_candidate and "longitude" not in raw_record and "Longitude" not in raw_record:
+            raw_record["longitude"] = gps_candidate.get("longitude")
+        if "lon" in gps_candidate and "longitude" not in raw_record and "Longitude" not in raw_record:
+            raw_record["longitude"] = gps_candidate.get("lon")
+
+    key_aliases = {
+        "latitude": "Latitude",
+        "lat": "Latitude",
+        "longitude": "Longitude",
+        "lon": "Longitude",
+        "lng": "Longitude",
+        "temperature": "Temperature",
+        "temp": "Temperature",
+        "humidity": "Humidity",
+        "co": "CO",
+        "mq7": "CO",
+        "mq_7": "CO",
+        "mq7_sensor_1": "CO",
+        "mq7_sensor_2": "CO_Secondary",
+        "pm25": "PM2.5",
+        "pm2.5": "PM2.5",
+        "pm10": "PM10",
+        "timestamp": "Timestamp",
+        "time": "Timestamp",
+    }
+    normalized = {}
+    for key, value in raw_record.items():
+        if key is None:
+            continue
+        if isinstance(value, (dict, list, tuple, set)):
+            # Skip nested/raw structures in saved rows; keep flattened numeric fields only.
+            continue
+        cleaned_key = str(key).strip()
+        canonical_key = key_aliases.get(cleaned_key.lower(), cleaned_key)
+        normalized[canonical_key] = value
+
+    if "Latitude" not in normalized or "Longitude" not in normalized:
+        return None, "Payload must include Latitude and Longitude"
+
+    try:
+        normalized["Latitude"] = float(normalized["Latitude"])
+        normalized["Longitude"] = float(normalized["Longitude"])
+    except (TypeError, ValueError):
+        return None, "Latitude/Longitude must be numeric"
+
+    for key, value in list(normalized.items()):
+        if key in ("Latitude", "Longitude", "Timestamp"):
+            continue
+        try:
+            normalized[key] = float(value)
+        except (TypeError, ValueError):
+            normalized[key] = value
+
+    if "Timestamp" not in normalized or not str(normalized["Timestamp"]).strip():
+        normalized["Timestamp"] = datetime.utcnow().isoformat() + "Z"
+
+    return normalized, None
+
+
+def parse_mqtt_payload(payload):
+    payload = payload.strip()
+    if not payload:
+        return None, "Empty payload"
+
+    try:
+        parsed = json.loads(payload)
+        if isinstance(parsed, dict):
+            return canonicalize_record(parsed)
+        return None, "JSON payload must be an object"
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        reader = csv.DictReader([payload])
+        row = next(reader, None)
+        if row:
+            return canonicalize_record(row)
+    except Exception:
+        pass
+
+    return None, "Unsupported payload format. Use JSON object or CSV header-based record."
+
+
+def on_mqtt_connect(client, userdata, flags, rc):
+    if rc == 0:
+        with mqtt_lock:
+            mqtt_state["connected"] = True
+            mqtt_state["last_error"] = ""
+            topic = mqtt_state["topic"]
+            qos = mqtt_state["qos"]
+        client.subscribe(topic, qos=qos)
+        app.logger.info("MQTT connected to %s:%s and subscribed to %s", mqtt_state["broker"], mqtt_state["port"], topic)
+    else:
+        with mqtt_lock:
+            mqtt_state["connected"] = False
+            mqtt_state["last_error"] = f"MQTT connection failed with rc={rc}"
+        app.logger.error(mqtt_state["last_error"])
+
+
+def on_mqtt_disconnect(client, userdata, rc):
+    with mqtt_lock:
+        mqtt_state["connected"] = False
+        if rc != 0:
+            mqtt_state["last_error"] = f"Unexpected disconnect rc={rc}"
+    app.logger.warning("MQTT disconnected with rc=%s", rc)
+
+
+def on_mqtt_message(client, userdata, msg):
+    payload_text = msg.payload.decode("utf-8", errors="ignore")
+    record, error = parse_mqtt_payload(payload_text)
+    with mqtt_lock:
+        mqtt_state["last_payload_preview"] = payload_text[:250]
+        mqtt_state["last_message_at"] = datetime.utcnow().isoformat() + "Z"
+        mqtt_state["messages_received"] += 1
+    if error:
+        with mqtt_lock:
+            mqtt_state["last_error"] = f"Message parse error: {error}"
+        app.logger.warning("MQTT parse error: %s", error)
+        return
+
+    with mqtt_lock:
+        mqtt_rows.append(record)
+        if len(mqtt_rows) > 10000:
+            mqtt_rows.pop(0)
+    save_mqtt_rows_to_csv()
+
+
+def process_dataframe(df):
+    # Normalize incoming column names to handle case/whitespace variations.
+    rename_map = {}
+    for col in df.columns:
+        normalized = str(col).strip().lower()
+        if normalized in ("latitude", "lat"):
+            rename_map[col] = "Latitude"
+        elif normalized in ("longitude", "lon", "lng"):
+            rename_map[col] = "Longitude"
+        elif normalized in ("timestamp", "time"):
+            rename_map[col] = "Timestamp"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    # If GPS columns are missing, try extracting them from a `gps` object-like column.
+    if ("Latitude" not in df.columns or "Longitude" not in df.columns) and "gps" in df.columns:
+        extracted_lat = []
+        extracted_lon = []
+        for raw in df["gps"].tolist():
+            lat_val = None
+            lon_val = None
+            if isinstance(raw, dict):
+                lat_val = raw.get("latitude", raw.get("lat"))
+                lon_val = raw.get("longitude", raw.get("lon"))
+            elif isinstance(raw, str) and raw.strip():
+                text = raw.strip()
+                parsed = None
+                try:
+                    parsed = json.loads(text)
+                except Exception:
+                    try:
+                        parsed = ast.literal_eval(text)
+                    except Exception:
+                        parsed = None
+                if isinstance(parsed, dict):
+                    lat_val = parsed.get("latitude", parsed.get("lat"))
+                    lon_val = parsed.get("longitude", parsed.get("lon"))
+            extracted_lat.append(lat_val)
+            extracted_lon.append(lon_val)
+        if "Latitude" not in df.columns:
+            df["Latitude"] = extracted_lat
+        if "Longitude" not in df.columns:
+            df["Longitude"] = extracted_lon
+
+    required_columns = ["Latitude", "Longitude"]
+    missing_columns = [col for col in required_columns if col not in df.columns]
+    if missing_columns:
+        return None, f"Missing required columns: {', '.join(missing_columns)}", 400
+
+    df = df.dropna(subset=required_columns).copy()
+    if df.empty:
+        return None, "No valid data after removing missing GPS values", 400
+
+    for col in required_columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=required_columns)
+    if df.empty:
+        return None, "Latitude/Longitude values are invalid", 400
+
+    pollutant_columns = [
+        col for col in df.columns
+        if col not in ("Latitude", "Longitude", "Timestamp", "gps", "GPS")
+    ]
+    if not pollutant_columns:
+        return None, "No pollutant data columns found (third column onward)", 400
+
+    results = []
+    for col in pollutant_columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+        if df[col].dropna().empty:
+            results.append({"column": col, "error": f"No valid numeric data for {col}"})
+            continue
+
+        safe_col = sanitize_column_name(col)
+        html_path = os.path.join(UPLOAD_FOLDER, f"heatmap_{safe_col}.html")
+        png_path = os.path.join(UPLOAD_FOLDER, f"heatmap_{safe_col}.png")
+        heatmap, error = create_heatmap(df.dropna(subset=[col]).copy(), col, html_path, png_path)
+
+        if heatmap is None:
+            results.append({"column": col, "error": error})
+        else:
+            results.append({"column": col, "map_path": f"/{png_path.replace(os.sep, '/')}"})
+
+    successful = [r for r in results if "map_path" in r]
+    if not successful:
+        return {"error": "Failed to create any heatmaps", "details": results}, None, 500
+    return {"success": True, "results": results}, None, 200
 
 def create_heatmap(df, value_column, output_html, output_png):
-    """
-    Generate a heatmap for a specific pollutant column.
-    - Validates data types for latitude, longitude, and pollutant values.
-    - Normalizes pollutant values for visualization.
-    - Creates a Folium map centered and zoomed to the data points.
-    - Adds a heatmap layer with a color gradient.
-    - Saves the map as HTML and converts it to PNG using Selenium.
-    Returns the map object and error (if any).
-    """
     try:
-        app.logger.debug(f"Creating heatmap for column: {value_column}")
+        app.logger.debug("Creating heatmap for column: %s", value_column)
 
-        # Validate that latitude, longitude, and pollutant values are numeric
-        if not all(df['Latitude'].apply(lambda x: isinstance(x, (int, float)))):
-            app.logger.error(f"Invalid Latitude data for {value_column}")
+        if not all(df["Latitude"].apply(lambda x: isinstance(x, (int, float)))):
+            app.logger.error("Invalid Latitude data for %s", value_column)
             return None, "Latitude contains non-numeric values"
-        if not all(df['Longitude'].apply(lambda x: isinstance(x, (int, float)))):
-            app.logger.error(f"Invalid Longitude data for {value_column}")
+        if not all(df["Longitude"].apply(lambda x: isinstance(x, (int, float)))):
+            app.logger.error("Invalid Longitude data for %s", value_column)
             return None, "Longitude contains non-numeric values"
         if not all(df[value_column].apply(lambda x: isinstance(x, (int, float)))):
-            app.logger.error(f"Invalid data in column {value_column}: non-numeric values")
+            app.logger.error("Invalid data in column %s: non-numeric values", value_column)
             return None, f"{value_column} contains non-numeric values"
 
-        # Normalize pollutant values for heatmap intensity
         try:
             scaler = MinMaxScaler()
-            df[f'{value_column}_normalized'] = scaler.fit_transform(df[[value_column]])
+            df[f"{value_column}_normalized"] = scaler.fit_transform(df[[value_column]])
         except Exception as e:
-            app.logger.error(f"Normalization failed for {value_column}: {str(e)}")
+            app.logger.error("Normalization failed for %s: %s", value_column, str(e))
             return None, f"Normalization failed for {value_column}: {str(e)}"
 
-        # Extract latitude and longitude columns
-        lat = df['Latitude']
-        lon = df['Longitude']
+        lat = df["Latitude"]
+        lon = df["Longitude"]
 
-        # Calculate map bounds and center
         try:
             min_lat, max_lat = lat.min(), lat.max()
             min_lon, max_lon = lon.min(), lon.max()
             lat_center = lat.mean()
             lon_center = lon.mean()
         except Exception as e:
-            app.logger.error(f"Bounds calculation failed for {value_column}: {str(e)}")
+            app.logger.error("Bounds calculation failed for %s: %s", value_column, str(e))
             return None, f"Bounds calculation failed: {str(e)}"
 
-        # If all points are identical, heatmap cannot be generated
-        if min_lat == max_lat or min_lon == max_lon:
-            app.logger.error(f"Invalid bounds for {value_column}: identical coordinates")
+        # Allow single-axis movement (e.g., mostly same latitude on a straight path).
+        # Only fail when both latitude and longitude are effectively identical.
+        eps = 1e-4
+        if min_lat == max_lat and min_lon == max_lon:
+            app.logger.error("Invalid bounds for %s: identical coordinates", value_column)
             return None, "All points have identical coordinates"
+        if min_lat == max_lat:
+            min_lat -= eps
+            max_lat += eps
+        if min_lon == max_lon:
+            min_lon -= eps
+            max_lon += eps
 
-        # Create the base Folium map
         heatmap = folium.Map(
             location=[lat_center, lon_center],
-            tiles='CartoDB positron',
-            zoom_start=5,  # Fallback zoom
+            tiles="CartoDB positron",
+            zoom_start=5,
             control_scale=False,
             zoom_control=False,
-            scrollWheelZoom=False
+            scrollWheelZoom=False,
         )
 
-        # Fit map bounds to all data points
         try:
             heatmap.fit_bounds([[min_lat, min_lon], [max_lat, max_lon]], padding=(50, 50))
         except Exception as e:
-            app.logger.error(f"Fit bounds failed for {value_column}: {str(e)}")
+            app.logger.error("Fit bounds failed for %s: %s", value_column, str(e))
             return None, f"Fit bounds failed: {str(e)}"
 
-        # Prepare heatmap data: [latitude, longitude, normalized value]
-        heat_data = [[row['Latitude'], row['Longitude'], row[f'{value_column}_normalized']]
-                     for _, row in df.iterrows()]
+        heat_data = [[row["Latitude"], row["Longitude"], row[f"{value_column}_normalized"]] for _, row in df.iterrows()]
 
-        # Define color gradient for pollution intensity
         gradient = {
-            0.0: '#00e400',  # Green (low)
-            0.2: '#ffff00',  # Yellow
-            0.4: '#ff7e00',  # Orange
-            0.6: '#ff0000',  # Red
-            0.8: '#8f3f97',  # Purple
-            1.0: '#7e0023',  # Maroon (high)
+            0.0: "#00e400",
+            0.2: "#ffff00",
+            0.4: "#ff7e00",
+            0.6: "#ff0000",
+            0.8: "#8f3f97",
+            1.0: "#7e0023",
         }
 
-        # Add heatmap layer to the map
         try:
-            HeatMap(
-                heat_data,
-                radius=36,
-                blur=55,
-                min_opacity=0.01,
-                max_opacity=0.05,
-                gradient=gradient
-            ).add_to(heatmap)
+            HeatMap(heat_data, radius=36, blur=55, min_opacity=0.01, max_opacity=0.05, gradient=gradient).add_to(heatmap)
         except Exception as e:
-            app.logger.error(f"Heatmap creation failed for {value_column}: {str(e)}")
+            app.logger.error("Heatmap creation failed for %s: %s", value_column, str(e))
             return None, f"Heatmap creation failed for {value_column}: {str(e)}"
 
-        # Save the map as HTML file
         try:
             heatmap.save(output_html)
-            app.logger.debug(f"Saved HTML: {output_html}")
+            app.logger.debug("Saved HTML: %s", output_html)
         except Exception as e:
-            app.logger.error(f"Failed to save HTML for {value_column}: {str(e)}")
+            app.logger.error("Failed to save HTML for %s: %s", value_column, str(e))
             return None, f"Failed to save HTML: {str(e)}"
-        
-        # Generate PNG
+
         success, error = save_map_as_png(output_html, output_png)
         if not success:
-            app.logger.error(f"PNG generation failed for {value_column}: {error}")
+            app.logger.error("PNG generation failed for %s: %s", value_column, error)
             return None, f"PNG generation failed for {value_column}: {error}"
-        
-        # Verify PNG exists
+
         for _ in range(10):
             if os.path.exists(output_png):
-                app.logger.debug(f"Confirmed PNG exists: {output_png}")
+                app.logger.debug("Confirmed PNG exists: %s", output_png)
                 break
             time.sleep(0.5)
         else:
-            app.logger.error(f"PNG file not found after creation: {output_png}")
+            app.logger.error("PNG file not found after creation: %s", output_png)
             return None, f"PNG file {output_png} was not created"
-        
+
         return heatmap, None
     except Exception as e:
-        app.logger.error(f"Unexpected error in heatmap creation for {value_column}: {str(e)}")
+        app.logger.error("Unexpected error in heatmap creation for %s: %s", value_column, str(e))
         return None, f"Unexpected error in heatmap creation for {value_column}: {str(e)}"
 
 
 def save_map_as_png(html_path, png_path):
-    """
-    Convert a Folium map HTML file to PNG using Selenium and headless Chrome.
-    - Loads the HTML file in a browser.
-    - Waits for map to render.
-    - Takes a screenshot and saves as PNG.
-    Returns success status and error (if any).
-    """
     try:
-        # Configure Chrome browser to run headless (no GUI)
         chrome_options = Options()
         chrome_options.add_argument("--headless")
         chrome_options.add_argument("--no-sandbox")
@@ -179,153 +435,192 @@ def save_map_as_png(html_path, png_path):
 
         driver = webdriver.Chrome(options=chrome_options)
 
-        # Load the HTML file in browser
         driver.get(f"file://{os.path.abspath(html_path)}")
 
-        # Wait for map to fully render
         time.sleep(3)
 
-        # Save screenshot as PNG
         driver.save_screenshot(png_path)
 
         driver.quit()
-        app.logger.debug(f"Saved PNG: {png_path}")
+        app.logger.debug("Saved PNG: %s", png_path)
         return True, None
     except Exception as e:
-        app.logger.error(f"Error generating PNG: {str(e)}")
+        app.logger.error("Error generating PNG: %s", str(e))
         return False, f"Error generating PNG: {str(e)}"
 
 
-# Route: Home page
-@app.route('/')
+@app.route("/")
 def home():
-    """
-    Render the main page (index.html) with upload form and instructions.
-    """
-    return render_template('index.html')
+    return render_template("index.html", mqtt_defaults=load_mqtt_defaults())
 
-@app.route('/upload', methods=['POST'])
+
+@app.route("/upload", methods=["POST"])
 def upload_file():
-    """
-    Handle CSV file upload and generate heatmaps for all pollutant columns.
-    - Validates file and reads CSV data.
-    - Checks for required columns (Latitude, Longitude).
-    - Drops rows with missing GPS data.
-    - Identifies pollutant columns (third column onward).
-    - For each pollutant, generates heatmap and PNG.
-    - Returns JSON with results (success/error for each column).
-    """
     try:
-        # Check if file was uploaded
-        if 'file' not in request.files:
-            return jsonify({'error': 'No file uploaded'}), 400
+        if "file" not in request.files:
+            return jsonify({"error": "No file uploaded"}), 400
 
-        file = request.files['file']
+        file = request.files["file"]
 
-        # Validate file name
-        if file.filename == '':
-            return jsonify({'error': 'No file selected'}), 400
+        if file.filename == "":
+            return jsonify({"error": "No file selected"}), 400
 
-        # Check file extension
         if not allowed_file(file.filename):
-            return jsonify({'error': 'Invalid file type. Please upload a CSV file'}), 400
+            return jsonify({"error": "Invalid file type. Please upload a CSV file"}), 400
 
-        # Read CSV file into DataFrame
         try:
             df = pd.read_csv(file)
-            app.logger.debug(f"CSV columns: {df.columns.tolist()}")
+            app.logger.debug("CSV columns: %s", df.columns.tolist())
         except Exception as e:
-            app.logger.error(f"Error reading CSV file: {str(e)}")
-            return jsonify({'error': f'Error reading CSV file: {str(e)}'}), 400
+            app.logger.error("Error reading CSV file: %s", str(e))
+            return jsonify({"error": f"Error reading CSV file: {str(e)}"}), 400
 
-        # Validate required columns (Latitude, Longitude)
-        required_columns = ['Latitude', 'Longitude']
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        if missing_columns:
-            app.logger.error(f"Missing columns: {missing_columns}")
-            return jsonify({'error': f'Missing required columns: {', '.join(missing_columns)}'}), 400
-
-        # Drop rows with missing GPS data
-        df = df.dropna(subset=required_columns)
-        if df.empty:
-            app.logger.error("No valid data after removing missing GPS values")
-            return jsonify({'error': 'No valid data after removing missing GPS values'}), 400
-
-        # Identify pollutant columns (all columns after Latitude, Longitude)
-        pollutant_columns = df.columns[2:].tolist()
-        if not pollutant_columns:
-            app.logger.error("No pollutant columns found")
-            return jsonify({'error': 'No pollutant data columns found (third column onward)'}), 400
-        app.logger.debug(f"Pollutant columns: {pollutant_columns}")
-
-        # Generate heatmaps for each pollutant column
-        results = []
-        for col in pollutant_columns:
-            app.logger.debug(f"Processing column: {col}")
-            # Skip columns with no valid data
-            if df[col].dropna().empty:
-                app.logger.warning(f"No valid data for {col}")
-                results.append({'column': col, 'error': f'No valid data for {col}'})
-                continue
-
-            # Generate heatmap and PNG for this pollutant
-            html_path = os.path.join(UPLOAD_FOLDER, f'heatmap_{col.replace(' ', '_')}.html')
-            png_path = os.path.join(UPLOAD_FOLDER, f'heatmap_{col.replace(' ', '_')}.png')
-            heatmap, error = create_heatmap(df, col, html_path, png_path)
-
-            # If heatmap creation failed, log error
-            if heatmap is None:
-                app.logger.error(f"Failed to create heatmap for {col}: {error}")
-                results.append({'column': col, 'error': error})
-            else:
-                results.append({'column': col, 'map_path': f'/{png_path}'})
-
-        # If no heatmaps were created successfully, return error
-        successful = [r for r in results if 'map_path' in r]
-        if not successful:
-            app.logger.error("No heatmaps created successfully")
-            return jsonify({'error': 'Failed to create any heatmaps', 'details': results}), 500
-
-        app.logger.info(f"Heatmaps generated: {[r.get('map_path') for r in successful]}")
-        return jsonify({'success': True, 'results': results})
+        payload, error, status = process_dataframe(df)
+        if error:
+            return jsonify({"error": error}), status
+        return jsonify(payload), status
     except Exception as e:
-        app.logger.error(f"Unexpected error in upload: {str(e)}")
-        return jsonify({'error': f'An error occurred: {str(e)}'}), 500
+        app.logger.error("Unexpected error in upload: %s", str(e))
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-# Route: Download a generated heatmap PNG or HTML file
-@app.route('/download/<path:filename>')
+@app.route("/mqtt/connect", methods=["POST"])
+def mqtt_connect():
+    global mqtt_client
+    if mqtt is None:
+        return jsonify({"error": "paho-mqtt is not installed. Run: pip install paho-mqtt"}), 500
+
+    data = request.get_json(silent=True) or {}
+    broker = str(data.get("broker", "")).strip()
+    topic = str(data.get("topic", "")).strip()
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+    client_id = str(data.get("client_id", "")).strip() or f"pollution-monitor-{int(time.time())}"
+
+    try:
+        port = int(data.get("port", 1883))
+        keepalive = int(data.get("keepalive", 60))
+        qos = int(data.get("qos", 0))
+    except ValueError:
+        return jsonify({"error": "Port, Keepalive and QoS must be numeric"}), 400
+
+    if not broker or not topic:
+        return jsonify({"error": "Broker and Topic are required"}), 400
+    if qos not in (0, 1, 2):
+        return jsonify({"error": "QoS must be 0, 1, or 2"}), 400
+
+    try:
+        if mqtt_client is not None:
+            try:
+                mqtt_client.loop_stop()
+                mqtt_client.disconnect()
+            except Exception:
+                pass
+
+        mqtt_client = mqtt.Client(client_id=client_id, clean_session=True)
+        if username:
+            mqtt_client.username_pw_set(username=username, password=password)
+        mqtt_client.on_connect = on_mqtt_connect
+        mqtt_client.on_disconnect = on_mqtt_disconnect
+        mqtt_client.on_message = on_mqtt_message
+
+        with mqtt_lock:
+            mqtt_state["broker"] = broker
+            mqtt_state["port"] = port
+            mqtt_state["topic"] = topic
+            mqtt_state["client_id"] = client_id
+            mqtt_state["username"] = username
+            mqtt_state["keepalive"] = keepalive
+            mqtt_state["qos"] = qos
+            mqtt_state["messages_received"] = 0
+            mqtt_state["last_message_at"] = None
+            mqtt_state["last_payload_preview"] = ""
+            mqtt_state["last_error"] = ""
+            mqtt_state["started_at"] = datetime.utcnow().isoformat() + "Z"
+        with mqtt_lock:
+            mqtt_rows.clear()
+        if os.path.exists(MQTT_CSV_PATH):
+            os.remove(MQTT_CSV_PATH)
+
+        mqtt_client.connect(broker, port, keepalive=keepalive)
+        mqtt_client.loop_start()
+        return jsonify({"success": True, "message": "MQTT connection initiated", "csv_path": f"/{MQTT_CSV_PATH.replace(os.sep, '/')}"})
+    except Exception as e:
+        with mqtt_lock:
+            mqtt_state["connected"] = False
+            mqtt_state["last_error"] = str(e)
+        app.logger.error("MQTT connect error: %s", str(e))
+        return jsonify({"error": f"Failed to connect MQTT: {str(e)}"}), 500
+
+
+@app.route("/mqtt/disconnect", methods=["POST"])
+def mqtt_disconnect():
+    global mqtt_client
+    try:
+        if mqtt_client is not None:
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+            mqtt_client = None
+        with mqtt_lock:
+            mqtt_state["connected"] = False
+        return jsonify({"success": True, "message": "MQTT disconnected"})
+    except Exception as e:
+        app.logger.error("MQTT disconnect error: %s", str(e))
+        return jsonify({"error": f"Failed to disconnect MQTT: {str(e)}"}), 500
+
+
+@app.route("/mqtt/status", methods=["GET"])
+def mqtt_status():
+    with mqtt_lock:
+        payload = dict(mqtt_state)
+        payload["rows_buffered"] = len(mqtt_rows)
+    payload["csv_exists"] = os.path.exists(MQTT_CSV_PATH)
+    payload["csv_file"] = f"/{MQTT_CSV_PATH.replace(os.sep, '/')}" if payload["csv_exists"] else ""
+    return jsonify(payload)
+
+
+@app.route("/mqtt/process", methods=["POST"])
+def mqtt_process():
+    with mqtt_lock:
+        rows_snapshot = list(mqtt_rows)
+
+    if rows_snapshot:
+        df = pd.DataFrame(rows_snapshot)
+    elif os.path.exists(MQTT_CSV_PATH):
+        try:
+            df = pd.read_csv(MQTT_CSV_PATH)
+        except Exception as e:
+            return jsonify({"error": f"Failed to read MQTT CSV: {str(e)}"}), 500
+    else:
+        return jsonify({"error": "No MQTT data received yet"}), 400
+
+    payload, error, status = process_dataframe(df)
+    if error:
+        return jsonify({"error": error}), status
+    payload["source"] = "mqtt"
+    payload["csv_path"] = f"/{MQTT_CSV_PATH.replace(os.sep, '/')}" if os.path.exists(MQTT_CSV_PATH) else ""
+    return jsonify(payload), status
+
+
+@app.route("/download/<path:filename>")
 def download_file(filename):
-    """
-    Serve a specific heatmap file (PNG or HTML) for download.
-    Checks if file exists, then sends it as an attachment.
-    """
     try:
         file_path = os.path.join(UPLOAD_FOLDER, filename)
-        app.logger.debug(f"Attempting to download: {file_path}")
+        app.logger.debug("Attempting to download: %s", file_path)
         if not os.path.exists(file_path):
-            app.logger.error(f"File not found: {file_path}")
-            return jsonify({'error': f'File {filename} not found'}), 404
-        app.logger.info(f"Serving file: {file_path}")
+            app.logger.error("File not found: %s", file_path)
+            return jsonify({"error": f"File {filename} not found"}), 404
+        app.logger.info("Serving file: %s", file_path)
         return send_file(file_path, as_attachment=True, download_name=filename)
     except Exception as e:
-        app.logger.error(f"Download error for {filename}: {str(e)}")
-        return jsonify({'error': f'Error serving file: {str(e)}'}), 500
+        app.logger.error("Download error for %s: %s", filename, str(e))
+        return jsonify({"error": f"Error serving file: {str(e)}"}), 500
 
 
-# Route: Clear all generated heatmap files
-@app.route('/clear', methods=['POST'])
+@app.route("/clear", methods=["POST"])
 def clear_files():
-    """
-    Delete all temporary PNG and HTML files in the static folder.
-    Used for cleanup/reset from the frontend.
-    """
     try:
-        # Patterns for files to delete (all heatmap PNG and HTML files)
-        patterns = [
-            os.path.join(UPLOAD_FOLDER, 'heatmap_*.png'),
-            os.path.join(UPLOAD_FOLDER, 'heatmap_*.html')
-        ]
+        patterns = [os.path.join(UPLOAD_FOLDER, "heatmap_*.png"), os.path.join(UPLOAD_FOLDER, "heatmap_*.html")]
 
         deleted_files = []
         for pattern in patterns:
@@ -334,16 +629,24 @@ def clear_files():
                     os.remove(file_path)
                     deleted_files.append(file_path)
                 except Exception as e:
-                    app.logger.warning(f"Failed to delete {file_path}: {str(e)}")
+                    app.logger.warning("Failed to delete %s: %s", file_path, str(e))
                     continue
 
-        app.logger.info(f"Cleared files: {deleted_files}")
-        return jsonify({'success': True, 'deleted': deleted_files})
+        if os.path.exists(MQTT_CSV_PATH):
+            os.remove(MQTT_CSV_PATH)
+            deleted_files.append(MQTT_CSV_PATH)
+        with mqtt_lock:
+            mqtt_rows.clear()
+            mqtt_state["messages_received"] = 0
+            mqtt_state["last_message_at"] = None
+            mqtt_state["last_payload_preview"] = ""
+            mqtt_state["last_error"] = ""
+        app.logger.info("Cleared files: %s", deleted_files)
+        return jsonify({"success": True, "deleted": deleted_files})
     except Exception as e:
-        app.logger.error(f"Clear files error: {str(e)}")
-        return jsonify({'error': f'Failed to clear files: {str(e)}'}), 500
+        app.logger.error("Clear files error: %s", str(e))
+        return jsonify({"error": f"Failed to clear files: {str(e)}"}), 500
 
 
-# Entry point: Run the Flask app in debug mode
-if __name__ == '__main__':
+if __name__ == "__main__":
     app.run(debug=True)

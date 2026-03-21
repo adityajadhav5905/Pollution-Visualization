@@ -13,6 +13,7 @@ This project monitors real-time environmental and air pollution data using an ES
 - Mobile setup with GPS-based location tracking
 - Measures temperature, humidity, PM2.5, PM10, CO, and harmful gases (NH3, SO2, NOx, Benzene)
 - Stores data in CSV format
+- Supports direct MQTT ingestion from ESP32 and auto-converts stream to CSV
 - Generates interactive heatmaps using Folium
 - Flask web app to display and download heatmaps
 - Post-processing and visualization using Python
@@ -57,9 +58,33 @@ Latitude, Longitude, Temperature, Humidity, PM2.5, PM10, CO, MQ135_Gas, Timestam
 ## Flask Web App for Heatmap Display
 
 - The Flask app allows users to:
+  - Choose input source: CSV upload or MQTT credentials.
+  - View MQTT connection specifications and transmission status in real time.
+  - Convert MQTT sensor stream into CSV automatically.
   - View generated heatmaps.
-  - Download heatmaps as PNG images.
+  - Download generated heatmaps and MQTT CSV output.
 - The app uses Folium to display heatmaps dynamically in a web browser.
+
+---
+
+## MQTT Payload Format (ESP32)
+
+Use JSON payloads with at least GPS coordinates:
+
+```json
+{
+  "Latitude": 19.0760,
+  "Longitude": 72.8777,
+  "Temperature": 30.5,
+  "Humidity": 64.1,
+  "CO": 2.1,
+  "PM2.5": 42.0,
+  "PM10": 58.0,
+  "Timestamp": "2026-03-21T10:15:00Z"
+}
+```
+
+`Latitude` and `Longitude` are mandatory for heatmap generation.
 
 ---
 
