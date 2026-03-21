@@ -3,3 +3,4 @@ pandas
 folium
 paho-mqtt
 gunicorn
+selenium
