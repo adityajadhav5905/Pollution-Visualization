@@ -126,6 +126,8 @@ def canonicalize_record(raw_record):
         "mq7_sensor_2": "CO_Secondary",
         "pm25": "PM2.5",
         "pm2.5": "PM2.5",
+        "dust_simulated": "PM2.5",   # legacy alias
+        "dust": "PM2.5",
         "pm10": "PM10",
         "timestamp": "Timestamp",
         "time": "Timestamp",
@@ -204,17 +206,33 @@ def on_mqtt_connect(client, userdata, flags, rc):
         app.logger.error(mqtt_state["last_error"])
 
 
+# def on_mqtt_disconnect(client, userdata, rc):
+#     with mqtt_lock:
+#         mqtt_state["connected"] = False
+#         if rc != 0:
+#             mqtt_state["last_error"] = f"Unexpected disconnect rc={rc}"
+#     app.logger.warning("MQTT disconnected with rc=%s", rc)
+
 def on_mqtt_disconnect(client, userdata, rc):
     with mqtt_lock:
         mqtt_state["connected"] = False
         if rc != 0:
             mqtt_state["last_error"] = f"Unexpected disconnect rc={rc}"
     app.logger.warning("MQTT disconnected with rc=%s", rc)
+    if rc != 0:
+        time.sleep(2)
+        try:
+            client.reconnect()
+            app.logger.info("MQTT reconnected successfully")
+        except Exception as e:
+            app.logger.error("MQTT reconnect failed: %s", e)
 
 
 def on_mqtt_message(client, userdata, msg):
     payload_text = msg.payload.decode("utf-8", errors="ignore")
+    app.logger.debug("RAW MQTT PAYLOAD: %s", payload_text)
     record, error = parse_mqtt_payload(payload_text)
+    app.logger.debug("PARSED RECORD: %s | ERROR: %s", record, error)
     with mqtt_lock:
         mqtt_state["last_payload_preview"] = payload_text[:250]
         mqtt_state["last_message_at"] = datetime.utcnow().isoformat() + "Z"
@@ -650,4 +668,4 @@ def clear_files():
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="0.0.0.0", port=port, debug=True ,)
