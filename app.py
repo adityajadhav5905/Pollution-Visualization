@@ -1,10 +1,21 @@
+"""
+Main Flask Application for Pollution Monitoring
 
+This module serves a web interface for generating heatmaps from pollution data.
+It supports two input modes:
+  1. CSV Upload: Users upload a CSV containing Latitude, Longitude, and Pollutant data.
+  2. Live MQTT: The app subscribes to an MQTT broker, receives live JSON/CSV payloads,
+     and plots them in real-time.
+     
+The application logic focuses purely on receiving data, sanitizing coordinate and
+pollutant values, scaling them, and generating in-memory HTML strings of Folium Heatmaps
+which are returned to the frontend.
+"""
 from flask import Flask, request, jsonify, send_file, render_template
 import pandas as pd
 import folium
 from folium.plugins import HeatMap
 import os
-import glob
 import time
 import json
 import csv
@@ -55,6 +66,7 @@ mqtt_state = {
 
 
 def load_mqtt_defaults():
+    """ Load default MQTT broker settings from mqtt_credentials.json, if available. """
     defaults = {
         "broker": "",
         "port": 1883,
@@ -86,6 +98,7 @@ def sanitize_column_name(column_name):
 
 
 def save_mqtt_rows_to_csv():
+    """ Safely save the in-memory MQTT rows to a temporary CSV file for processing or download. """
     with mqtt_lock:
         if not mqtt_rows:
             return
@@ -234,7 +247,8 @@ def on_mqtt_message(client, userdata, msg):
     with mqtt_lock:
         mqtt_state["last_payload_preview"] = payload_text[:250]
         mqtt_state["last_message_at"] = datetime.utcnow().isoformat() + "Z"
-        mqtt_state["messages_received"] += 1
+        current_msgs = mqtt_state.get("messages_received")
+        mqtt_state["messages_received"] = (current_msgs if isinstance(current_msgs, int) else 0) + 1
     if error:
         with mqtt_lock:
             mqtt_state["last_error"] = f"Message parse error: {error}"
@@ -249,6 +263,17 @@ def on_mqtt_message(client, userdata, msg):
 
 
 def process_dataframe(df, settings=None):
+    """
+    Core function to process tabular data containing GPS coordinates and pollutant values.
+    
+    1. Normalizes GPS column names.
+    2. Drops rows with invalid or missing coordinates.
+    3. Identifies and loops over available pollutant columns.
+    4. Calls `create_heatmap` for each valid pollutant.
+    
+    Returns:
+        tuple (dict|None, str|None, int): Payload dict or None, Error message or None, HTTP Status Code.
+    """
     if settings is None:
         settings = {}
         
@@ -339,6 +364,12 @@ def process_dataframe(df, settings=None):
     return {"success": True, "results": results}, None, 200
 
 def create_heatmap(df, value_column, settings=None):
+    """
+    Creates an interactive HTML heatmap string using Folium.
+    
+    Expects a DataFrame with validated 'Latitude', 'Longitude', and a pollutant column.
+    The pollutant column is min-max scaled before generating the heat layer.
+    """
     if settings is None:
         settings = {}
         
@@ -590,8 +621,9 @@ def mqtt_process():
     settings = data.get("settings", {})
 
     payload, error, status = process_dataframe(df, settings)
-    if error:
-        return jsonify({"error": error}), status
+    if error or not isinstance(payload, dict):
+        return jsonify({"error": error or "Unknown processing error"}), status
+    assert isinstance(payload, dict)
     payload["source"] = "mqtt"
     payload["csv_path"] = f"/{MQTT_CSV_PATH.replace(os.sep, '/')}" if os.path.exists(MQTT_CSV_PATH) else ""
     return jsonify(payload), status
