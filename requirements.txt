@@ -3,6 +3,5 @@ pandas
 folium
 paho-mqtt
 gunicorn
-selenium
 scikit-learn
 pyserial

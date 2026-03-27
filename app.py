@@ -12,8 +12,6 @@ import ast
 import logging
 import threading
 from datetime import datetime
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
 from sklearn.preprocessing import MinMaxScaler
 
 try:
@@ -27,7 +25,7 @@ app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
 app.logger.setLevel(logging.DEBUG)
 
-UPLOAD_FOLDER = "static"
+UPLOAD_FOLDER = "/tmp"
 ALLOWED_EXTENSIONS = {"csv"}
 MQTT_CSV_FILENAME = "mqtt_stream_data.csv"
 MQTT_CSV_PATH = os.path.join(UPLOAD_FOLDER, MQTT_CSV_FILENAME)
@@ -250,7 +248,10 @@ def on_mqtt_message(client, userdata, msg):
     save_mqtt_rows_to_csv()
 
 
-def process_dataframe(df):
+def process_dataframe(df, settings=None):
+    if settings is None:
+        settings = {}
+        
     # Normalize incoming column names to handle case/whitespace variations.
     rename_map = {}
     for col in df.columns:
@@ -324,21 +325,23 @@ def process_dataframe(df):
             continue
 
         safe_col = sanitize_column_name(col)
-        html_path = os.path.join(UPLOAD_FOLDER, f"heatmap_{safe_col}.html")
-        png_path = os.path.join(UPLOAD_FOLDER, f"heatmap_{safe_col}.png")
-        heatmap, error = create_heatmap(df.dropna(subset=[col]).copy(), col, html_path, png_path)
+        
+        heatmap_html, error = create_heatmap(df.dropna(subset=[col]).copy(), col, settings)
 
-        if heatmap is None:
+        if heatmap_html is None:
             results.append({"column": col, "error": error})
         else:
-            results.append({"column": col, "map_path": f"/{png_path.replace(os.sep, '/')}"})
+            results.append({"column": col, "map_html": heatmap_html})
 
-    successful = [r for r in results if "map_path" in r]
+    successful = [r for r in results if "map_html" in r]
     if not successful:
         return {"error": "Failed to create any heatmaps", "details": results}, None, 500
     return {"success": True, "results": results}, None, 200
 
-def create_heatmap(df, value_column, output_html, output_png):
+def create_heatmap(df, value_column, settings=None):
+    if settings is None:
+        settings = {}
+        
     try:
         app.logger.debug("Creating heatmap for column: %s", value_column)
 
@@ -384,10 +387,17 @@ def create_heatmap(df, value_column, output_html, output_png):
             min_lon -= eps
             max_lon += eps
 
+        # Extract settings with defaults
+        zoom_start = float(settings.get("zoom", 5))
+        radius = float(settings.get("radius", 36))
+        blur = float(settings.get("blur", 55))
+        min_op = float(settings.get("min_opacity", 0.01))
+        max_op = float(settings.get("max_opacity", 0.05))
+
         heatmap = folium.Map(
             location=[lat_center, lon_center],
             tiles="CartoDB positron",
-            zoom_start=5,
+            zoom_start=zoom_start,
             control_scale=False,
             zoom_control=False,
             scrollWheelZoom=False,
@@ -411,60 +421,18 @@ def create_heatmap(df, value_column, output_html, output_png):
         }
 
         try:
-            HeatMap(heat_data, radius=36, blur=55, min_opacity=0.01, max_opacity=0.05, gradient=gradient).add_to(heatmap)
+            HeatMap(heat_data, radius=radius, blur=blur, min_opacity=min_op, max_opacity=max_op, gradient=gradient).add_to(heatmap)
+            
+            # Extract HTML string directly
+            map_html = heatmap.get_root().render()
+            return map_html, None
         except Exception as e:
             app.logger.error("Heatmap creation failed for %s: %s", value_column, str(e))
             return None, f"Heatmap creation failed for {value_column}: {str(e)}"
 
-        try:
-            heatmap.save(output_html)
-            app.logger.debug("Saved HTML: %s", output_html)
-        except Exception as e:
-            app.logger.error("Failed to save HTML for %s: %s", value_column, str(e))
-            return None, f"Failed to save HTML: {str(e)}"
-
-        success, error = save_map_as_png(output_html, output_png)
-        if not success:
-            app.logger.error("PNG generation failed for %s: %s", value_column, error)
-            return None, f"PNG generation failed for {value_column}: {error}"
-
-        for _ in range(10):
-            if os.path.exists(output_png):
-                app.logger.debug("Confirmed PNG exists: %s", output_png)
-                break
-            time.sleep(0.5)
-        else:
-            app.logger.error("PNG file not found after creation: %s", output_png)
-            return None, f"PNG file {output_png} was not created"
-
-        return heatmap, None
     except Exception as e:
         app.logger.error("Unexpected error in heatmap creation for %s: %s", value_column, str(e))
         return None, f"Unexpected error in heatmap creation for {value_column}: {str(e)}"
-
-
-def save_map_as_png(html_path, png_path):
-    try:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--window-size=1280,720")
-
-        driver = webdriver.Chrome(options=chrome_options)
-
-        driver.get(f"file://{os.path.abspath(html_path)}")
-
-        time.sleep(3)
-
-        driver.save_screenshot(png_path)
-
-        driver.quit()
-        app.logger.debug("Saved PNG: %s", png_path)
-        return True, None
-    except Exception as e:
-        app.logger.error("Error generating PNG: %s", str(e))
-        return False, f"Error generating PNG: {str(e)}"
 
 
 @app.route("/")
@@ -493,7 +461,13 @@ def upload_file():
             app.logger.error("Error reading CSV file: %s", str(e))
             return jsonify({"error": f"Error reading CSV file: {str(e)}"}), 400
 
-        payload, error, status = process_dataframe(df)
+        settings_str = request.form.get("settings", "{}")
+        try:
+            settings = json.loads(settings_str)
+        except Exception:
+            settings = {}
+
+        payload, error, status = process_dataframe(df, settings)
         if error:
             return jsonify({"error": error}), status
         return jsonify(payload), status
@@ -612,7 +586,10 @@ def mqtt_process():
     else:
         return jsonify({"error": "No MQTT data received yet"}), 400
 
-    payload, error, status = process_dataframe(df)
+    data = request.get_json(silent=True) or {}
+    settings = data.get("settings", {})
+
+    payload, error, status = process_dataframe(df, settings)
     if error:
         return jsonify({"error": error}), status
     payload["source"] = "mqtt"
@@ -638,18 +615,7 @@ def download_file(filename):
 @app.route("/clear", methods=["POST"])
 def clear_files():
     try:
-        patterns = [os.path.join(UPLOAD_FOLDER, "heatmap_*.png"), os.path.join(UPLOAD_FOLDER, "heatmap_*.html")]
-
         deleted_files = []
-        for pattern in patterns:
-            for file_path in glob.glob(pattern):
-                try:
-                    os.remove(file_path)
-                    deleted_files.append(file_path)
-                except Exception as e:
-                    app.logger.warning("Failed to delete %s: %s", file_path, str(e))
-                    continue
-
         if os.path.exists(MQTT_CSV_PATH):
             os.remove(MQTT_CSV_PATH)
             deleted_files.append(MQTT_CSV_PATH)

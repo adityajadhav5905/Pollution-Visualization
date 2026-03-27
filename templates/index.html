@@ -49,6 +49,85 @@
         flex-direction: column;
       }
 
+      /* Modal Styles */
+      .modal-overlay {
+        display: none;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(10, 25, 47, 0.85);
+        backdrop-filter: blur(5px);
+        z-index: 2000;
+        justify-content: center;
+        align-items: center;
+      }
+      .modal-content {
+        background: linear-gradient(135deg, rgba(16, 33, 62, 0.95), rgba(10, 25, 47, 0.95));
+        border: 1px solid rgba(100, 255, 218, 0.3);
+        border-radius: 16px;
+        padding: 2rem;
+        width: 90%;
+        max-width: 450px;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+        color: #fff;
+      }
+      .modal-content h2 {
+        color: #64ffda;
+        margin-bottom: 1.5rem;
+        text-align: center;
+      }
+      .setting-group {
+        margin-bottom: 1.2rem;
+      }
+      .setting-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        color: #9fe9d6;
+        font-size: 0.9rem;
+      }
+      .setting-group input[type="range"] {
+        width: 100%;
+        accent-color: #64ffda;
+      }
+      .setting-group input[type="number"] {
+        background: rgba(100, 255, 218, 0.1);
+        border: 1px solid rgba(100, 255, 218, 0.3);
+        color: white;
+        padding: 0.4rem;
+        border-radius: 4px;
+        width: 80px;
+        margin-left: 10px;
+      }
+      .setting-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 1rem;
+        margin-top: 1.5rem;
+      }
+      .modal-btn {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.3s;
+      }
+      .btn-cancel {
+        background: transparent;
+        border: 1px solid #ff6b6b;
+        color: #ff6b6b;
+      }
+      .btn-cancel:hover { background: rgba(255, 107, 107, 0.1); }
+      .btn-save {
+        background: linear-gradient(45deg, #64ffda, #8892b0);
+        border: none;
+        color: #0a192f;
+      }
+      .btn-save:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3); }
+
       /* Title Section */
       .title-section {
         min-height: 160px;
@@ -519,6 +598,58 @@
       <div class="loader-text">Generating Heatmaps...</div>
     </div>
 
+    <!-- Settings Modal -->
+    <div class="modal-overlay" id="settingsModal">
+      <div class="modal-content">
+        <h2>Appearance Settings</h2>
+        
+        <div class="setting-group">
+          <label>Base Zoom Level</label>
+          <div class="setting-row">
+            <input type="range" id="setZoom" min="1" max="18" step="1">
+            <input type="number" id="setZoomVal" min="1" max="18">
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label>Point Radius</label>
+          <div class="setting-row">
+            <input type="range" id="setRadius" min="5" max="100" step="1">
+            <input type="number" id="setRadiusVal" min="5" max="100">
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label>Blur Intensity</label>
+          <div class="setting-row">
+            <input type="range" id="setBlur" min="1" max="100" step="1">
+            <input type="number" id="setBlurVal" min="1" max="100">
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label>Minimum Opacity</label>
+          <div class="setting-row">
+            <input type="range" id="setMinOp" min="0" max="1" step="0.01">
+            <input type="number" id="setMinOpVal" min="0" max="1" step="0.01">
+          </div>
+        </div>
+
+        <div class="setting-group">
+          <label>Maximum Opacity</label>
+          <div class="setting-row">
+            <input type="range" id="setMaxOp" min="0" max="1" step="0.01">
+            <input type="number" id="setMaxOpVal" min="0" max="1" step="0.01">
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="modal-btn btn-cancel" onclick="closeSettings()">Cancel</button>
+          <button class="modal-btn btn-save" onclick="saveSettings()">Save & Close</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Main Content -->
     <div class="container">
       <div class="title-section">
@@ -545,6 +676,15 @@
                 onclick="switchMode('mqtt')"
               >
                 Use MQTT Credentials
+              </button>
+              <button
+                type="button"
+                id="settingsBtn"
+                class="mode-btn"
+                onclick="openSettings()"
+                style="margin-left: auto;"
+              >
+                Settings ⚙️
               </button>
             </div>
 
@@ -709,6 +849,55 @@
     <script>
       let currentMode = null;
       let mqttStatusInterval = null;
+      
+      const defaultSettings = { zoom: 5, radius: 36, blur: 55, min_opacity: 0.01, max_opacity: 0.05 };
+      let appSettings = JSON.parse(localStorage.getItem('heatmapSettings')) || { ...defaultSettings };
+
+      function syncInputs(rangeId, numId) {
+        const range = document.getElementById(rangeId);
+        const num = document.getElementById(numId);
+        range.addEventListener('input', () => num.value = range.value);
+        num.addEventListener('input', () => range.value = num.value);
+      }
+
+      document.addEventListener('DOMContentLoaded', () => {
+        syncInputs('setZoom', 'setZoomVal');
+        syncInputs('setRadius', 'setRadiusVal');
+        syncInputs('setBlur', 'setBlurVal');
+        syncInputs('setMinOp', 'setMinOpVal');
+        syncInputs('setMaxOp', 'setMaxOpVal');
+      });
+
+      function openSettings() {
+        document.getElementById('setZoom').value = appSettings.zoom;
+        document.getElementById('setZoomVal').value = appSettings.zoom;
+        document.getElementById('setRadius').value = appSettings.radius;
+        document.getElementById('setRadiusVal').value = appSettings.radius;
+        document.getElementById('setBlur').value = appSettings.blur;
+        document.getElementById('setBlurVal').value = appSettings.blur;
+        document.getElementById('setMinOp').value = appSettings.min_opacity;
+        document.getElementById('setMinOpVal').value = appSettings.min_opacity;
+        document.getElementById('setMaxOp').value = appSettings.max_opacity;
+        document.getElementById('setMaxOpVal').value = appSettings.max_opacity;
+        
+        document.getElementById('settingsModal').style.display = 'flex';
+      }
+
+      function closeSettings() {
+        document.getElementById('settingsModal').style.display = 'none';
+      }
+
+      function saveSettings() {
+        appSettings = {
+          zoom: parseFloat(document.getElementById('setZoom').value),
+          radius: parseFloat(document.getElementById('setRadius').value),
+          blur: parseFloat(document.getElementById('setBlur').value),
+          min_opacity: parseFloat(document.getElementById('setMinOp').value),
+          max_opacity: parseFloat(document.getElementById('setMaxOp').value)
+        };
+        localStorage.setItem('heatmapSettings', JSON.stringify(appSettings));
+        closeSettings();
+      }
 
       function switchMode(mode) {
         currentMode = mode;
@@ -796,17 +985,24 @@
           title.textContent = `${result.column} Heatmap`;
           heatmapItem.appendChild(title);
 
-          const img = document.createElement("img");
-          img.src = result.map_path + "?t=" + new Date().getTime();
-          img.alt = `${result.column} heatmap`;
-          heatmapItem.appendChild(img);
+          const iframe = document.createElement("iframe");
+          iframe.srcdoc = result.map_html;
+          iframe.style.width = "100%";
+          iframe.style.height = "500px";
+          iframe.style.border = "none";
+          iframe.style.borderRadius = "8px";
+          iframe.style.boxShadow = "0 0 10px rgba(0, 0, 0, 0.3)";
+          heatmapItem.appendChild(iframe);
 
           const downloadBtn = document.createElement("a");
           downloadBtn.className = "download-btn";
-          const filename = result.map_path.replace(/^.*[\\/]/, "");
-          downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
-          downloadBtn.download = filename;
-          downloadBtn.textContent = `Download ${result.column} Heatmap`;
+          
+          const blob = new Blob([result.map_html], { type: "text/html" });
+          const url = URL.createObjectURL(blob);
+          
+          downloadBtn.href = url;
+          downloadBtn.download = `heatmap_${result.column}.html`;
+          downloadBtn.textContent = `Download ${result.column} Heatmap (HTML)`;
           heatmapItem.appendChild(downloadBtn);
           mapContainer.appendChild(heatmapItem);
         });
@@ -826,6 +1022,7 @@
 
         const formData = new FormData();
         formData.append("file", file);
+        formData.append("settings", JSON.stringify(appSettings));
 
         fetch("/upload", {
           method: "POST",
@@ -898,7 +1095,11 @@
 
       function processMqttData() {
         setLoader(true, "Generating heatmaps from MQTT data...");
-        fetch("/mqtt/process", { method: "POST" })
+        fetch("/mqtt/process", { 
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ settings: appSettings })
+        })
           .then((r) => r.json())
           .then((data) => renderResults(data))
           .catch(() => alert("Unable to process MQTT data right now."))
