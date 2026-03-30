@@ -53,7 +53,10 @@
       .modal-overlay {
         display: none;
         position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
         background: rgba(10, 25, 47, 0.85);
         backdrop-filter: blur(5px);
         z-index: 2000;
@@ -61,7 +64,11 @@
         align-items: center;
       }
       .modal-content {
-        background: linear-gradient(135deg, rgba(16, 33, 62, 0.95), rgba(10, 25, 47, 0.95));
+        background: linear-gradient(
+          135deg,
+          rgba(16, 33, 62, 0.95),
+          rgba(10, 25, 47, 0.95)
+        );
         border: 1px solid rgba(100, 255, 218, 0.3);
         border-radius: 16px;
         padding: 2rem;
@@ -120,13 +127,18 @@
         border: 1px solid #ff6b6b;
         color: #ff6b6b;
       }
-      .btn-cancel:hover { background: rgba(255, 107, 107, 0.1); }
+      .btn-cancel:hover {
+        background: rgba(255, 107, 107, 0.1);
+      }
       .btn-save {
         background: linear-gradient(45deg, #64ffda, #8892b0);
         border: none;
         color: #0a192f;
       }
-      .btn-save:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3); }
+      .btn-save:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(100, 255, 218, 0.3);
+      }
 
       /* Title Section */
       .title-section {
@@ -602,50 +614,54 @@
     <div class="modal-overlay" id="settingsModal">
       <div class="modal-content">
         <h2>Appearance Settings</h2>
-        
+
         <div class="setting-group">
           <label>Base Zoom Level</label>
           <div class="setting-row">
-            <input type="range" id="setZoom" min="1" max="18" step="1">
-            <input type="number" id="setZoomVal" min="1" max="18">
+            <input type="range" id="setZoom" min="1" max="18" step="1" />
+            <input type="number" id="setZoomVal" min="1" max="18" />
           </div>
         </div>
 
         <div class="setting-group">
           <label>Point Radius</label>
           <div class="setting-row">
-            <input type="range" id="setRadius" min="5" max="100" step="1">
-            <input type="number" id="setRadiusVal" min="5" max="100">
+            <input type="range" id="setRadius" min="5" max="100" step="1" />
+            <input type="number" id="setRadiusVal" min="5" max="100" />
           </div>
         </div>
 
         <div class="setting-group">
           <label>Blur Intensity</label>
           <div class="setting-row">
-            <input type="range" id="setBlur" min="1" max="100" step="1">
-            <input type="number" id="setBlurVal" min="1" max="100">
+            <input type="range" id="setBlur" min="1" max="100" step="1" />
+            <input type="number" id="setBlurVal" min="1" max="100" />
           </div>
         </div>
 
         <div class="setting-group">
           <label>Minimum Opacity</label>
           <div class="setting-row">
-            <input type="range" id="setMinOp" min="0" max="1" step="0.01">
-            <input type="number" id="setMinOpVal" min="0" max="1" step="0.01">
+            <input type="range" id="setMinOp" min="0" max="1" step="0.01" />
+            <input type="number" id="setMinOpVal" min="0" max="1" step="0.01" />
           </div>
         </div>
 
         <div class="setting-group">
           <label>Maximum Opacity</label>
           <div class="setting-row">
-            <input type="range" id="setMaxOp" min="0" max="1" step="0.01">
-            <input type="number" id="setMaxOpVal" min="0" max="1" step="0.01">
+            <input type="range" id="setMaxOp" min="0" max="1" step="0.01" />
+            <input type="number" id="setMaxOpVal" min="0" max="1" step="0.01" />
           </div>
         </div>
 
         <div class="modal-actions">
-          <button class="modal-btn btn-cancel" onclick="closeSettings()">Cancel</button>
-          <button class="modal-btn btn-save" onclick="saveSettings()">Save & Close</button>
+          <button class="modal-btn btn-cancel" onclick="closeSettings()">
+            Cancel
+          </button>
+          <button class="modal-btn btn-save" onclick="saveSettings()">
+            Save & Close
+          </button>
         </div>
       </div>
     </div>
@@ -682,7 +698,7 @@
                 id="settingsBtn"
                 class="mode-btn"
                 onclick="openSettings()"
-                style="margin-left: auto;"
+                style="margin-left: auto"
               >
                 Settings ⚙️
               </button>
@@ -736,9 +752,42 @@
                   value="{{ mqtt_defaults.keepalive }}"
                 />
                 <select id="mqttQos">
-                  <option value="0" {% if mqtt_defaults.qos|string == "0" %}selected{% endif %}>QoS 0</option>
-                  <option value="1" {% if mqtt_defaults.qos|string == "1" %}selected{% endif %}>QoS 1</option>
-                  <option value="2" {% if mqtt_defaults.qos|string == "2" %}selected{% endif %}>QoS 2</option>
+                  <option
+                    value="0"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="0"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 0
+                  </option>
+                  <option
+                    value="1"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="1"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 1
+                  </option>
+                  <option
+                    value="2"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="2"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 2
+                  </option>
                 </select>
               </div>
               <div class="mqtt-actions">
@@ -830,7 +879,7 @@
         <div class="footer-group">
           <span class="footer-title">Project Contributors:</span>
           <span>Aditya Jadhav (32323)</span>
-          <span>Om Kothawade (32338)</span>
+          <span>Om Kothawade (32334)</span>
           <span>Atharva Dhapse (32316)</span>
         </div>
         <div class="footer-group">
@@ -849,53 +898,61 @@
     <script>
       let currentMode = null;
       let mqttStatusInterval = null;
-      
-      const defaultSettings = { zoom: 5, radius: 36, blur: 55, min_opacity: 0.01, max_opacity: 0.05 };
-      let appSettings = JSON.parse(localStorage.getItem('heatmapSettings')) || { ...defaultSettings };
+
+      const defaultSettings = {
+        zoom: 5,
+        radius: 36,
+        blur: 55,
+        min_opacity: 0.01,
+        max_opacity: 0.05,
+      };
+      let appSettings = JSON.parse(localStorage.getItem("heatmapSettings")) || {
+        ...defaultSettings,
+      };
 
       function syncInputs(rangeId, numId) {
         const range = document.getElementById(rangeId);
         const num = document.getElementById(numId);
-        range.addEventListener('input', () => num.value = range.value);
-        num.addEventListener('input', () => range.value = num.value);
+        range.addEventListener("input", () => (num.value = range.value));
+        num.addEventListener("input", () => (range.value = num.value));
       }
 
-      document.addEventListener('DOMContentLoaded', () => {
-        syncInputs('setZoom', 'setZoomVal');
-        syncInputs('setRadius', 'setRadiusVal');
-        syncInputs('setBlur', 'setBlurVal');
-        syncInputs('setMinOp', 'setMinOpVal');
-        syncInputs('setMaxOp', 'setMaxOpVal');
+      document.addEventListener("DOMContentLoaded", () => {
+        syncInputs("setZoom", "setZoomVal");
+        syncInputs("setRadius", "setRadiusVal");
+        syncInputs("setBlur", "setBlurVal");
+        syncInputs("setMinOp", "setMinOpVal");
+        syncInputs("setMaxOp", "setMaxOpVal");
       });
 
       function openSettings() {
-        document.getElementById('setZoom').value = appSettings.zoom;
-        document.getElementById('setZoomVal').value = appSettings.zoom;
-        document.getElementById('setRadius').value = appSettings.radius;
-        document.getElementById('setRadiusVal').value = appSettings.radius;
-        document.getElementById('setBlur').value = appSettings.blur;
-        document.getElementById('setBlurVal').value = appSettings.blur;
-        document.getElementById('setMinOp').value = appSettings.min_opacity;
-        document.getElementById('setMinOpVal').value = appSettings.min_opacity;
-        document.getElementById('setMaxOp').value = appSettings.max_opacity;
-        document.getElementById('setMaxOpVal').value = appSettings.max_opacity;
-        
-        document.getElementById('settingsModal').style.display = 'flex';
+        document.getElementById("setZoom").value = appSettings.zoom;
+        document.getElementById("setZoomVal").value = appSettings.zoom;
+        document.getElementById("setRadius").value = appSettings.radius;
+        document.getElementById("setRadiusVal").value = appSettings.radius;
+        document.getElementById("setBlur").value = appSettings.blur;
+        document.getElementById("setBlurVal").value = appSettings.blur;
+        document.getElementById("setMinOp").value = appSettings.min_opacity;
+        document.getElementById("setMinOpVal").value = appSettings.min_opacity;
+        document.getElementById("setMaxOp").value = appSettings.max_opacity;
+        document.getElementById("setMaxOpVal").value = appSettings.max_opacity;
+
+        document.getElementById("settingsModal").style.display = "flex";
       }
 
       function closeSettings() {
-        document.getElementById('settingsModal').style.display = 'none';
+        document.getElementById("settingsModal").style.display = "none";
       }
 
       function saveSettings() {
         appSettings = {
-          zoom: parseFloat(document.getElementById('setZoom').value),
-          radius: parseFloat(document.getElementById('setRadius').value),
-          blur: parseFloat(document.getElementById('setBlur').value),
-          min_opacity: parseFloat(document.getElementById('setMinOp').value),
-          max_opacity: parseFloat(document.getElementById('setMaxOp').value)
+          zoom: parseFloat(document.getElementById("setZoom").value),
+          radius: parseFloat(document.getElementById("setRadius").value),
+          blur: parseFloat(document.getElementById("setBlur").value),
+          min_opacity: parseFloat(document.getElementById("setMinOp").value),
+          max_opacity: parseFloat(document.getElementById("setMaxOp").value),
         };
-        localStorage.setItem('heatmapSettings', JSON.stringify(appSettings));
+        localStorage.setItem("heatmapSettings", JSON.stringify(appSettings));
         closeSettings();
       }
 
@@ -996,10 +1053,10 @@
 
           const downloadBtn = document.createElement("a");
           downloadBtn.className = "download-btn";
-          
+
           const blob = new Blob([result.map_html], { type: "text/html" });
           const url = URL.createObjectURL(blob);
-          
+
           downloadBtn.href = url;
           downloadBtn.download = `heatmap_${result.column}.html`;
           downloadBtn.textContent = `Download ${result.column} Heatmap (HTML)`;
@@ -1095,10 +1152,10 @@
 
       function processMqttData() {
         setLoader(true, "Generating heatmaps from MQTT data...");
-        fetch("/mqtt/process", { 
+        fetch("/mqtt/process", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ settings: appSettings })
+          body: JSON.stringify({ settings: appSettings }),
         })
           .then((r) => r.json())
           .then((data) => renderResults(data))
