@@ -65,6 +65,27 @@ mqtt_state = {
 }
 
 
+def compute_column_variation(rows, max_recent=15):
+    """
+    Compute the last `max_recent` records and a flag per column indicating
+    whether that column has ever varied (more than one distinct non-null value)
+    across all rows seen so far.
+    """
+    if not rows:
+        return [], {}
+
+    df_all = pd.DataFrame(rows)
+    df_recent = df_all.tail(max_recent)
+
+    variation = {}
+    for col in df_all.columns:
+        series = df_all[col].dropna()
+        variation[col] = series.nunique(dropna=True) > 1
+
+    recent_rows = df_recent.to_dict(orient="records")
+    return recent_rows, variation
+
+
 def load_mqtt_defaults():
     """ Load default MQTT broker settings from mqtt_credentials.json, if available. """
     defaults = {
@@ -262,6 +283,81 @@ def on_mqtt_message(client, userdata, msg):
     save_mqtt_rows_to_csv()
 
 
+POLLUTANT_THRESHOLDS = {
+    # Values are approximate guide ranges for 24h exposure.
+    # Units:
+    #   PM2.5 / PM10 -> µg/m³
+    #   CO           -> ppm
+    "PM2.5": {
+        "unit": "µg/m³",
+        "hazardous_threshold": 120,
+        "bands": [
+            (0, 30, "Acceptable"),
+            (30, 60, "Moderate"),
+            (60, 90, "Poor"),
+            (90, 120, "Very Poor"),
+            (120, float("inf"), "Hazardous"),
+        ],
+    },
+    "PM10": {
+        "unit": "µg/m³",
+        "hazardous_threshold": 350,
+        "bands": [
+            (0, 50, "Acceptable"),
+            (50, 100, "Moderate"),
+            (100, 250, "Poor"),
+            (250, 350, "Very Poor"),
+            (350, float("inf"), "Hazardous"),
+        ],
+    },
+    "CO": {
+        "unit": "ppm",
+        "hazardous_threshold": 10,
+        "bands": [
+            (0, 1, "Acceptable"),
+            (1, 2, "Moderate"),
+            (2, 10, "Poor"),
+            (10, float("inf"), "Hazardous"),
+        ],
+    },
+}
+
+
+def categorize_pollutant(name, value):
+    """
+    Determine qualitative category for the latest pollutant value.
+    """
+    if value is None:
+        return {
+            "category": "Unknown",
+            "hazardous_threshold": None,
+            "unit": None,
+            "details": "No numeric data available.",
+        }
+
+    cfg = POLLUTANT_THRESHOLDS.get(name)
+    if not cfg:
+        return {
+            "category": "Unknown",
+            "hazardous_threshold": None,
+            "unit": None,
+            "details": "No reference thresholds defined for this pollutant.",
+        }
+
+    category = "Unknown"
+    for low, high, label in cfg["bands"]:
+        if low <= value < high:
+            category = label
+            break
+
+    return {
+        "category": category,
+        "hazardous_threshold": cfg["hazardous_threshold"],
+        "unit": cfg["unit"],
+        "details": f"Hazardous when ≥ {cfg['hazardous_threshold']} {cfg['unit']}.",
+    }
+
+
 def process_dataframe(df, settings=None):
     """
     Core function to process tabular data containing GPS coordinates and pollutant values.
@@ -345,18 +441,27 @@ def process_dataframe(df, settings=None):
     results = []
     for col in pollutant_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
-        if df[col].dropna().empty:
+        clean_series = df[col].dropna()
+        if clean_series.empty:
             results.append({"column": col, "error": f"No valid numeric data for {col}"})
             continue
 
-        safe_col = sanitize_column_name(col)
-        
+        latest_value = float(clean_series.iloc[-1])
+        stats = categorize_pollutant(col, latest_value)
+        stats["latest_value"] = latest_value
+
         heatmap_html, error = create_heatmap(df.dropna(subset=[col]).copy(), col, settings)
 
         if heatmap_html is None:
             results.append({"column": col, "error": error})
         else:
-            results.append({"column": col, "map_html": heatmap_html})
+            results.append(
+                {
+                    "column": col,
+                    "map_html": heatmap_html,
+                    "stats": stats,
+                }
+            )
 
     successful = [r for r in results if "map_html" in r]
     if not successful:
@@ -597,6 +702,9 @@ def mqtt_status():
     with mqtt_lock:
         payload = dict(mqtt_state)
         payload["rows_buffered"] = len(mqtt_rows)
+        recent_rows, variation = compute_column_variation(mqtt_rows, max_recent=15)
+        payload["recent_rows"] = recent_rows
+        payload["column_variation"] = variation
     payload["csv_exists"] = os.path.exists(MQTT_CSV_PATH)
     payload["csv_file"] = f"/{MQTT_CSV_PATH.replace(os.sep, '/')}" if payload["csv_exists"] else ""
     return jsonify(payload)

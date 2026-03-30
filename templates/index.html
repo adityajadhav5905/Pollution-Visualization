@@ -321,6 +321,70 @@
         font-weight: 600;
       }
 
+      .mqtt-data-panel {
+        margin-top: 1rem;
+        background: rgba(12, 30, 57, 0.7);
+        border-radius: 10px;
+        border: 1px solid rgba(100, 255, 218, 0.25);
+        padding: 1rem;
+      }
+
+      .mqtt-data-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.6rem;
+      }
+
+      .mqtt-data-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #9fe9d6;
+      }
+
+      .mqtt-table-wrapper {
+        max-height: 260px;
+        overflow: auto;
+        border-radius: 8px;
+        border: 1px solid rgba(100, 255, 218, 0.2);
+        margin-bottom: 0.8rem;
+      }
+
+      .mqtt-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.82rem;
+        background: rgba(5, 16, 34, 0.95);
+      }
+
+      .mqtt-table th,
+      .mqtt-table td {
+        padding: 0.4rem 0.6rem;
+        border-bottom: 1px solid rgba(100, 255, 218, 0.08);
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }
+
+      .mqtt-table thead {
+        position: sticky;
+        top: 0;
+        background: rgba(5, 16, 34, 0.98);
+        z-index: 1;
+      }
+
+      .mqtt-col-static {
+        color: #ff6b6b;
+      }
+
+      .mqtt-col-dynamic {
+        color: #64ffda;
+      }
+
+      .mqtt-chart-container {
+        margin-top: 0.4rem;
+      }
+
       .spec-grid {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -416,6 +480,20 @@
         color: #64ffda;
         margin-bottom: 0.5rem;
         font-size: 1.2rem;
+      }
+
+      .heatmap-summary {
+        margin-top: 0.75rem;
+        font-size: 0.9rem;
+        color: #dff6ff;
+        background: rgba(10, 25, 47, 0.85);
+        border-radius: 8px;
+        padding: 0.7rem 0.8rem;
+        border: 1px solid rgba(100, 255, 218, 0.2);
+      }
+
+      .heatmap-summary strong {
+        color: #9fe9d6;
       }
 
       /* Download Button */
@@ -821,6 +899,18 @@
                 </div>
                 <div class="payload-preview" id="mLastPayload">-</div>
               </div>
+
+              <div class="mqtt-data-panel" id="mqttDataPanel" style="display: none">
+                <div class="mqtt-data-header">
+                  <div class="mqtt-data-title">Recent MQTT Readings (Last 15)</div>
+                </div>
+                <div class="mqtt-table-wrapper">
+                  <table class="mqtt-table" id="mqttTable"></table>
+                </div>
+                <div class="mqtt-chart-container">
+                  <canvas id="mqttChart" height="140"></canvas>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -862,6 +952,7 @@
     </div>
 
     <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
       let currentMode = null;
       let mqttStatusInterval = null;
@@ -876,6 +967,133 @@
       let appSettings = JSON.parse(localStorage.getItem("heatmapSettings")) || {
         ...defaultSettings,
       };
+      let mqttChartInstance = null;
+
+      function buildMqttTableAndChart(status) {
+        const panel = document.getElementById("mqttDataPanel");
+        const table = document.getElementById("mqttTable");
+        const recent = status.recent_rows || [];
+        const variation = status.column_variation || {};
+
+        if (!recent.length) {
+          panel.style.display = "none";
+          return;
+        }
+
+        panel.style.display = "block";
+
+        // Collect all keys seen in recent rows
+        const colsSet = new Set();
+        recent.forEach((row) => {
+          Object.keys(row || {}).forEach((k) => colsSet.add(k));
+        });
+        let cols = Array.from(colsSet);
+
+        // Prefer common column ordering when available
+        const preferredOrder = [
+          "Timestamp",
+          "Latitude",
+          "Longitude",
+          "Temperature",
+          "Humidity",
+          "CO",
+          "PM2.5",
+          "PM10",
+        ];
+        cols.sort((a, b) => {
+          const ia = preferredOrder.indexOf(a);
+          const ib = preferredOrder.indexOf(b);
+          if (ia === -1 && ib === -1) return a.localeCompare(b);
+          if (ia === -1) return 1;
+          if (ib === -1) return -1;
+          return ia - ib;
+        });
+
+        let thead = "<thead><tr>";
+        cols.forEach((col) => {
+          const dynamic = !!variation[col];
+          const cls = dynamic ? "mqtt-col-dynamic" : "mqtt-col-static";
+          thead += `<th class="${cls}">${col}</th>`;
+        });
+        thead += "</tr></thead>";
+
+        let tbody = "<tbody>";
+        recent.forEach((row) => {
+          tbody += "<tr>";
+          cols.forEach((col) => {
+            let val = row[col];
+            if (val === undefined || val === null || val === "") {
+              val = "-";
+            }
+            tbody += `<td>${val}</td>`;
+          });
+          tbody += "</tr>";
+        });
+        tbody += "</tbody>";
+
+        table.innerHTML = thead + tbody;
+
+        // Chart: line chart for numeric pollutant columns over last 15 readings
+        const ctx = document.getElementById("mqttChart").getContext("2d");
+        const labels = recent.map((_, idx) => `${idx + 1}`);
+
+        const numericCols = cols.filter((col) => {
+          if (["Latitude", "Longitude", "Timestamp"].includes(col)) return false;
+          return recent.some((row) => typeof row[col] === "number");
+        });
+
+        const palette = [
+          "#64ffda",
+          "#ff6b6b",
+          "#ffd166",
+          "#4dabf7",
+          "#b197fc",
+          "#ff922b",
+        ];
+
+        const datasets = numericCols.map((col, idx) => {
+          const data = recent.map((row) =>
+            typeof row[col] === "number" ? row[col] : null,
+          );
+          return {
+            label: col,
+            data,
+            borderColor: palette[idx % palette.length],
+            backgroundColor: "transparent",
+            tension: 0.3,
+          };
+        });
+
+        if (mqttChartInstance) {
+          mqttChartInstance.destroy();
+        }
+
+        mqttChartInstance = new Chart(ctx, {
+          type: "line",
+          data: {
+            labels,
+            datasets,
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                labels: { color: "#dff6ff", boxWidth: 12 },
+              },
+            },
+            scales: {
+              x: {
+                ticks: { color: "#b9d3ff" },
+                grid: { color: "rgba(100,255,218,0.08)" },
+              },
+              y: {
+                ticks: { color: "#b9d3ff" },
+                grid: { color: "rgba(100,255,218,0.08)" },
+              },
+            },
+          },
+        });
+      }
 
       function syncInputs(rangeId, numId) {
         const range = document.getElementById(rangeId);
@@ -1028,6 +1246,30 @@
           downloadBtn.download = `heatmap_${result.column}.html`;
           downloadBtn.textContent = `Download ${result.column} Heatmap (HTML)`;
           heatmapItem.appendChild(downloadBtn);
+
+          if (result.stats) {
+            const s = result.stats;
+            const unit = s.unit || "";
+            const latestText =
+              s.latest_value !== undefined
+                ? `${s.latest_value.toFixed(2)}${unit ? " " + unit : ""}`
+                : "N/A";
+            const category = s.category || "Unknown";
+            const hazText =
+              s.hazardous_threshold && s.unit
+                ? `Hazardous when ≥ ${s.hazardous_threshold} ${s.unit}.`
+                : s.details || "";
+
+            const summary = document.createElement("div");
+            summary.className = "heatmap-summary";
+            summary.innerHTML = `
+              <div><strong>Current Level:</strong> ${latestText}</div>
+              <div><strong>Status:</strong> ${category}</div>
+              <div><strong>Hazardous Threshold:</strong> ${hazText}</div>
+            `;
+            heatmapItem.appendChild(summary);
+          }
+
           mapContainer.appendChild(heatmapItem);
         });
       }
@@ -1151,6 +1393,7 @@
             updateText("mLastAt", data.last_message_at);
             updateText("mLastError", data.last_error || "-", "-");
             updateText("mLastPayload", data.last_payload_preview || "-", "-");
+            buildMqttTableAndChart(data);
           })
           .catch(() => {
             updateText("mLastError", "Unable to fetch MQTT status.");
