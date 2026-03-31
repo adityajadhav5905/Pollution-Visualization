@@ -291,9 +291,10 @@ POLLUTANT_THRESHOLDS = {
     "PM2.5": {
         "unit": "µg/m³",
         "hazardous_threshold": 120,
+        "max_recorded": 500,
         "bands": [
-            (0, 30, "Acceptable"),
-            (30, 60, "Moderate"),
+            (0, 30, "Good"),
+            (30, 60, "Acceptable"),
             (60, 90, "Poor"),
             (90, 120, "Very Poor"),
             (120, float("inf"), "Hazardous"),
@@ -302,9 +303,10 @@ POLLUTANT_THRESHOLDS = {
     "PM10": {
         "unit": "µg/m³",
         "hazardous_threshold": 350,
+        "max_recorded": 1000,
         "bands": [
-            (0, 50, "Acceptable"),
-            (50, 100, "Moderate"),
+            (0, 50, "Good"),
+            (50, 100, "Acceptable"),
             (100, 250, "Poor"),
             (250, 350, "Very Poor"),
             (350, float("inf"), "Hazardous"),
@@ -312,12 +314,98 @@ POLLUTANT_THRESHOLDS = {
     },
     "CO": {
         "unit": "ppm",
-        "hazardous_threshold": 10,
+        "hazardous_threshold": 30,
+        "max_recorded": 1000,
         "bands": [
-            (0, 1, "Acceptable"),
-            (1, 2, "Moderate"),
-            (2, 10, "Poor"),
-            (10, float("inf"), "Hazardous"),
+            (0, 2, "Good"),
+            (2, 9, "Acceptable"),
+            (9, 15, "Poor"),
+            (15, 30, "Very Poor"),
+            (30, float("inf"), "Hazardous"),
+        ],
+    },
+    "CO2": {
+        "unit": "ppm",
+        "hazardous_threshold": 5000,
+        "max_recorded": 10000,
+        "bands": [
+            (0, 600, "Good"),
+            (600, 1000, "Acceptable"),
+            (1000, 2000, "Poor"),
+            (2000, 5000, "Very Poor"),
+            (5000, float("inf"), "Hazardous"),
+        ],
+    },
+    "Temperature": {
+        "unit": "°C",
+        "hazardous_threshold": 50,
+        "max_recorded": 56.7,
+        "bands": [
+            (-float("inf"), 24, "Good"),
+            (24, 30, "Acceptable"),
+            (30, 40, "Poor"),
+            (40, 50, "Very Poor"),
+            (50, float("inf"), "Hazardous"),
+        ],
+    },
+    "Temprature": {
+        "unit": "°C",
+        "hazardous_threshold": 50,
+        "max_recorded": 56.7,
+        "bands": [
+            (-float("inf"), 24, "Good"),
+            (24, 30, "Acceptable"),
+            (30, 40, "Poor"),
+            (40, 50, "Very Poor"),
+            (50, float("inf"), "Hazardous"),
+        ],
+    },
+    "Humidity": {
+        "unit": "%",
+        "hazardous_threshold": 90,
+        "max_recorded": 100,
+        "bands": [
+            (-float("inf"), 50, "Good"),
+            (50, 60, "Acceptable"),
+            (60, 75, "Poor"),
+            (75, 90, "Very Poor"),
+            (90, float("inf"), "Hazardous"),
+        ],
+    },
+    "NO2": {
+        "unit": "ppb",
+        "hazardous_threshold": 400,
+        "max_recorded": 1000,
+        "bands": [
+            (0, 50, "Good"),
+            (50, 100, "Acceptable"),
+            (100, 200, "Poor"),
+            (200, 400, "Very Poor"),
+            (400, float("inf"), "Hazardous"),
+        ],
+    },
+    "SO2": {
+        "unit": "ppb",
+        "hazardous_threshold": 185,
+        "max_recorded": 500,
+        "bands": [
+            (0, 35, "Good"),
+            (35, 75, "Acceptable"),
+            (75, 185, "Poor"),
+            (185, 304, "Very Poor"),
+            (304, float("inf"), "Hazardous"),
+        ],
+    },
+    "O3": {
+        "unit": "ppb",
+        "hazardous_threshold": 200,
+        "max_recorded": 500,
+        "bands": [
+            (0, 54, "Good"),
+            (54, 70, "Acceptable"),
+            (70, 85, "Poor"),
+            (85, 105, "Very Poor"),
+            (105, float("inf"), "Hazardous"),
         ],
     },
 }
@@ -337,6 +425,23 @@ def categorize_pollutant(name, value):
 
     cfg = POLLUTANT_THRESHOLDS.get(name)
     if not cfg:
+        upper_name = str(name).strip().upper()
+        # Direct exact match
+        for k, v in POLLUTANT_THRESHOLDS.items():
+            if k.upper() == upper_name:
+                cfg = v
+                break
+        
+        # Fuzzy match (e.g., "CO (Carbon Monoxide)" -> matches "CO")
+        if not cfg:
+            import re
+            words = set(re.findall(r'[A-Z0-9.]+', upper_name))
+            for k, v in POLLUTANT_THRESHOLDS.items():
+                if k.upper() in words:
+                    cfg = v
+                    break
+
+    if not cfg:
         return {
             "category": "Unknown",
             "hazardous_threshold": None,
@@ -350,10 +455,33 @@ def categorize_pollutant(name, value):
             category = label
             break
 
+    color_map = {
+        "Good": "rgb(0, 228, 0)",
+        "Acceptable": "rgb(255, 255, 0)",
+        "Moderate": "rgb(255, 255, 0)",
+        "Poor": "rgb(255, 126, 0)",
+        "Very Poor": "rgb(255, 0, 0)",
+        "Hazardous": "rgb(126, 0, 35)"
+    }
+
+    bands_payload = []
+    for b in cfg["bands"]:
+        raw_low = b[0]
+        raw_high = b[1]
+        bands_payload.append({
+            "low": -9999 if raw_low == -float('inf') else raw_low,
+            "high": 999999 if raw_high == float('inf') else raw_high,
+            "label": b[2]
+        })
+
     return {
         "category": category,
         "hazardous_threshold": cfg["hazardous_threshold"],
+        "max_safe_level": cfg["bands"][1][1] if len(cfg["bands"]) > 1 else cfg["bands"][0][1],
+        "maximum_recorded": cfg.get("max_recorded", cfg["hazardous_threshold"] * 2),
+        "color": color_map.get(category, "rgb(128, 128, 128)"),
         "unit": cfg["unit"],
+        "bands_data": bands_payload,
         "details": f"Hazardous when ≥ {cfg['hazardous_threshold']} {cfg['unit']}.",
     }
 
@@ -449,6 +577,9 @@ def process_dataframe(df, settings=None):
         latest_value = float(clean_series.iloc[-1])
         stats = categorize_pollutant(col, latest_value)
         stats["latest_value"] = latest_value
+        stats["min"] = float(clean_series.min())
+        stats["max"] = float(clean_series.max())
+        stats["mean"] = float(clean_series.mean())
 
         heatmap_html, error = create_heatmap(df.dropna(subset=[col]).copy(), col, settings)
 
