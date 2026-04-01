@@ -704,6 +704,27 @@ def create_heatmap(df, value_column, settings=None):
 
 @app.route("/")
 def home():
+    global mqtt_client
+    try:
+        if mqtt_client is not None:
+            mqtt_client.loop_stop()
+            mqtt_client.disconnect()
+            mqtt_client = None
+    except Exception:
+        pass
+
+    with mqtt_lock:
+        mqtt_rows.clear()
+        mqtt_state["connected"] = False
+        mqtt_state["messages_received"] = 0
+        mqtt_state["last_message_at"] = None
+        mqtt_state["last_payload_preview"] = ""
+        mqtt_state["last_error"] = ""
+        if os.path.exists(MQTT_CSV_PATH):
+            try:
+                os.remove(MQTT_CSV_PATH)
+            except Exception:
+                pass
     return render_template("index.html", mqtt_defaults=load_mqtt_defaults())
 
 
