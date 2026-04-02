@@ -156,6 +156,18 @@ def canonicalize_record(raw_record):
         "mq_7": "CO",
         "mq7_sensor_1": "CO",
         "mq7_sensor_2": "CO_Secondary",
+        "co2": "CO2",
+        "mq135": "CO2",
+        "mq_135": "CO2",
+        "mq135_sensor": "CO2",
+        "no2": "NO2",
+        "mics": "NO2",
+        "mics6814": "NO2",
+        "mics_6814": "NO2",
+        "mics_no2": "NO2",
+        "so2": "SO2",
+        "o3": "O3",
+        "ozone": "O3",
         "pm25": "PM2.5",
         "pm2.5": "PM2.5",
         "dust_simulated": "PM2.5",   # legacy alias
@@ -419,6 +431,7 @@ def categorize_pollutant(name, value):
         return {
             "category": "Unknown",
             "hazardous_threshold": None,
+            "max_safe_level": "Not Defined",
             "unit": None,
             "details": "No numeric data available.",
         }
@@ -445,6 +458,7 @@ def categorize_pollutant(name, value):
         return {
             "category": "Unknown",
             "hazardous_threshold": None,
+            "max_safe_level": "Not Defined",
             "unit": None,
             "details": "No reference thresholds defined for this pollutant.",
         }
@@ -559,9 +573,10 @@ def process_dataframe(df, settings=None):
     if df.empty:
         return None, "Latitude/Longitude values are invalid", 400
 
+    ignore_cols = {"latitude", "longitude", "timestamp", "gps", "msg", "message", "device", "device_id", "id", "mac", "battery", "status", "rssi", "date", "time"}
     pollutant_columns = [
         col for col in df.columns
-        if col not in ("Latitude", "Longitude", "Timestamp", "gps", "GPS")
+        if str(col).strip().lower() not in ignore_cols
     ]
     if not pollutant_columns:
         return None, "No pollutant data columns found (third column onward)", 400

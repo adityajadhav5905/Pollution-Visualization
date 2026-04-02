@@ -1316,7 +1316,9 @@
             const minVal = s.min !== undefined ? s.min.toFixed(2) : "N/A";
             const maxVal = s.max !== undefined ? s.max.toFixed(2) : "N/A";
             const meanVal = s.mean !== undefined ? s.mean.toFixed(2) : "N/A";
-            const safeLvl = s.max_safe_level !== undefined ? s.max_safe_level + (s.unit ? " " + s.unit : "") : "N/A";
+            const safeLvl = (s.max_safe_level !== undefined && s.max_safe_level !== null)
+              ? (typeof s.max_safe_level === "number" ? s.max_safe_level + (s.unit ? " " + s.unit : "") : String(s.max_safe_level))
+              : "N/A";
 
             let ticksHtml = "";
             let maxDivisor = s.maximum_recorded || s.hazardous_threshold || 100;
