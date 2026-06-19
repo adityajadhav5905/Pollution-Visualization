@@ -885,9 +885,42 @@
                   value="{{ mqtt_defaults.keepalive }}"
                 />
                 <select id="mqttQos">
-                  <option value="0" {% if mqtt_defaults.qos|string == "0" %}selected{% endif %}>QoS 0</option>
-                  <option value="1" {% if mqtt_defaults.qos|string == "1" %}selected{% endif %}>QoS 1</option>
-                  <option value="2" {% if mqtt_defaults.qos|string == "2" %}selected{% endif %}>QoS 2</option>
+                  <option
+                    value="0"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="0"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 0
+                  </option>
+                  <option
+                    value="1"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="1"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 1
+                  </option>
+                  <option
+                    value="2"
+                    {%
+                    if
+                    mqtt_defaults.qos|string=""
+                    ="2"
+                    %}selected{%
+                    endif
+                    %}
+                  >
+                    QoS 2
+                  </option>
                 </select>
               </div>
               <div class="mqtt-actions">
@@ -955,9 +988,15 @@
                 <div class="payload-preview" id="mLastPayload">-</div>
               </div>
 
-              <div class="mqtt-data-panel" id="mqttDataPanel" style="display: none">
+              <div
+                class="mqtt-data-panel"
+                id="mqttDataPanel"
+                style="display: none"
+              >
                 <div class="mqtt-data-header">
-                  <div class="mqtt-data-title">Recent MQTT Readings (Last 15)</div>
+                  <div class="mqtt-data-title">
+                    Recent MQTT Readings (Last 15)
+                  </div>
                 </div>
                 <div class="mqtt-table-wrapper">
                   <table class="mqtt-table" id="mqttTable"></table>
@@ -1093,7 +1132,8 @@
         const labels = recent.map((_, idx) => `${idx + 1}`);
 
         const numericCols = cols.filter((col) => {
-          if (["Latitude", "Longitude", "Timestamp"].includes(col)) return false;
+          if (["Latitude", "Longitude", "Timestamp"].includes(col))
+            return false;
           return recent.some((row) => typeof row[col] === "number");
         });
 
@@ -1308,45 +1348,48 @@
             const color = s.color || "rgb(128, 128, 128)";
             let percent = 0;
             if (s.maximum_recorded && s.latest_value !== undefined) {
-                percent = Math.max(0, Math.min(100, (s.latest_value / s.maximum_recorded) * 100));
+              percent = Math.max(
+                0,
+                Math.min(100, (s.latest_value / s.maximum_recorded) * 100),
+              );
             } else if (s.hazardous_threshold && s.latest_value !== undefined) {
-                percent = Math.max(0, Math.min(100, (s.latest_value / s.hazardous_threshold) * 100));
+              percent = Math.max(
+                0,
+                Math.min(100, (s.latest_value / s.hazardous_threshold) * 100),
+              );
             }
 
             const minVal = s.min !== undefined ? s.min.toFixed(2) : "N/A";
             const maxVal = s.max !== undefined ? s.max.toFixed(2) : "N/A";
             const meanVal = s.mean !== undefined ? s.mean.toFixed(2) : "N/A";
-            const safeLvl = (s.max_safe_level !== undefined && s.max_safe_level !== null)
-              ? (typeof s.max_safe_level === "number" ? s.max_safe_level + (s.unit ? " " + s.unit : "") : String(s.max_safe_level))
-              : "N/A";
 
             let ticksHtml = "";
             let maxDivisor = s.maximum_recorded || s.hazardous_threshold || 100;
             if (s.bands_data && Array.isArray(s.bands_data)) {
-                s.bands_data.forEach(band => {
-                    let low = Math.max(0, band.low);
-                    let high = Math.min(maxDivisor, band.high);
-                    
-                    if (high > low) {
-                        let lowPct = (low / maxDivisor) * 100;
-                        let highPct = (high / maxDivisor) * 100;
-                        let midPct = lowPct + (highPct - lowPct) / 2;
-                        
-                        // Text label centered in the band
-                        ticksHtml += `<div class="band-label" style="position: absolute; left: ${midPct}%; bottom: 100%; transform: translateX(-50%); font-size: 0.65rem; color: #b9d3ff; margin-bottom: 4px; white-space: nowrap; z-index: 1;">${band.label}</div>`;
-                        
-                        // Vertical tick line at the end of the band (avoid drawing one at exactly 100% to keep it clean)
-                        if (highPct < 100) {
-                            ticksHtml += `<div style="position: absolute; left: ${highPct}%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.6); z-index: 2;"></div>`;
-                        }
-                    }
-                });
+              s.bands_data.forEach((band) => {
+                let low = Math.max(0, band.low);
+                let high = Math.min(maxDivisor, band.high);
+
+                if (high > low) {
+                  let lowPct = (low / maxDivisor) * 100;
+                  let highPct = (high / maxDivisor) * 100;
+                  let midPct = lowPct + (highPct - lowPct) / 2;
+
+                  // Text label centered in the band
+                  ticksHtml += `<div class="band-label" style="position: absolute; left: ${midPct}%; bottom: 100%; transform: translateX(-50%); font-size: 0.65rem; color: #b9d3ff; margin-bottom: 4px; white-space: nowrap; z-index: 1;">${band.label}</div>`;
+
+                  // Vertical tick line at the end of the band (avoid drawing one at exactly 100% to keep it clean)
+                  if (highPct < 100) {
+                    ticksHtml += `<div style="position: absolute; left: ${highPct}%; top: 0; bottom: 0; width: 2px; background: rgba(255,255,255,0.6); z-index: 2;"></div>`;
+                  }
+                }
+              });
             }
 
             let healthNoteHtml = "";
             let colLower = result.column.toLowerCase();
             if (!colLower.includes("temp")) {
-                healthNoteHtml = `<div class="health-note">⚠️ ${result.column} level is ${category.toLowerCase()}.</div>`;
+              healthNoteHtml = `<div class="health-note">⚠️ ${result.column} level is ${category.toLowerCase()}.</div>`;
             }
 
             const summary = document.createElement("div");
@@ -1363,7 +1406,6 @@
                 <div class="stat-item"><span class="stat-label">MIN</span><span class="stat-value">${minVal}</span></div>
                 <div class="stat-item"><span class="stat-label">MAX</span><span class="stat-value">${maxVal}</span></div>
                 <div class="stat-item"><span class="stat-label">MEAN</span><span class="stat-value">${meanVal}</span></div>
-                <div class="stat-item"><span class="stat-label">MAX SAFE LEVEL</span><span class="stat-value">${safeLvl}</span></div>
               </div>
             `;
             heatmapItem.appendChild(summary);
