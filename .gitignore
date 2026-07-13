@@ -1,0 +1,21 @@
+# Python cache and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# Local secrets and runtime data
+mqtt_credentials.json
+.env
+.env.*
+uploads/
+*.log
+
+# Project-specific temporary/preparation files
+PROJECT_OVERVIEW.md
+REVERT_COMMIT.md
+TECHNICAL_PROJECT_OVERVIEW.md
+VERCEL_DEPLOYMENT_GUIDE.md
+Values.csv
